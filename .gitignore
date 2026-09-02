@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+build/
+*.spec
+folha_ponto.db
+output_test/
+Folhas_Geradas/
