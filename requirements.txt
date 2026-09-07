@@ -1,0 +1,8 @@
+customtkinter==5.2.2
+openpyxl==3.1.5
+python-docx==1.2.0
+pymupdf==1.28.2
+pytesseract==0.3.13
+pillow==11.3.0
+pywin32==306; platform_system == "Windows"
+pyinstaller==6.11.1
