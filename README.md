@@ -26,9 +26,27 @@ python main.py
 
 ## Configurando o envio de e-mail (aba "⚙️ Configurações")
 
-O envio pode ser feito via **SMTP** (recomendado, funciona em qualquer
-computador) ou via **MS Outlook Desktop** (requer Outlook instalado e
-configurado no Windows).
+O envio pode ser feito via **API Resend** (recomendado — mais simples,
+sem senha, funciona em qualquer sistema operacional), via **SMTP**
+(Gmail/Office365/servidor institucional) ou via **MS Outlook Desktop**
+(requer Outlook instalado e configurado no Windows).
+
+### Opção recomendada: API Resend
+
+1. Crie uma conta gratuita em [resend.com](https://resend.com) (plano grátis
+   cobre ~3.000 e-mails/mês).
+2. Gere uma **API Key** em Resend → API Keys.
+3. (Opcional, mas recomendado para produção) Verifique um domínio próprio em
+   Resend → Domains, para poder enviar como `digep@seudominio.com`. Para
+   testes rápidos, pode-se usar o remetente de teste `onboarding@resend.dev`.
+4. Na aba **⚙️ Configurações**, seção "Envio via API Resend", cole a API Key
+   e informe o e-mail/nome do remetente. Use **Testar API Key Resend** para
+   validar antes de salvar.
+5. Na aba **✉️ Envio Acumuladores**, selecione o método **"API Resend"**.
+
+Vantagens sobre o SMTP: não precisa de senha de e-mail/senha de app, não
+depende de porta 587/465 liberada na rede, e a API responde de forma mais
+clara em caso de erro.
 
 Para SMTP, preencha:
 
@@ -51,24 +69,31 @@ e nunca é enviada a terceiros.
 
 ## Fluxo de uso
 
-1. **📥 Servidores** — importe a planilha Excel com os servidores (nome,
+1. **🏠 Painel** — visão geral do andamento da competência selecionada: quantos
+   servidores estão cadastrados, quantas folhas já foram geradas, quantas
+   digitalizações ainda aguardam conferência e quantos acumuladores já
+   receberam o e-mail. Cada cartão tem um atalho direto para a aba
+   correspondente, além de um feed com as últimas tentativas de envio.
+2. **📥 Servidores** — importe a planilha Excel com os servidores (nome,
    matrícula, CPF, e-mail pessoal, carga horária, se acumula cargo). Também é
    possível editar um servidor manualmente (duplo clique na lista).
-2. **📄 Gerar Folhas** — gera folhas de ponto em branco (.docx/.pdf) a partir
-   do modelo, para impressão e assinatura mensal.
-3. **🔍 OCR & Digitalizações** — depois que as folhas assinadas forem
+3. **📄 Gerar Folhas** — gera folhas de ponto em branco (.docx/.pdf) a partir
+   do modelo institucional padrão (fixo, não personalizável pela interface),
+   para impressão e assinatura mensal.
+4. **🔍 OCR & Conferência** — depois que as folhas assinadas forem
    digitalizadas, faça o upload em lote. O sistema roda OCR e tenta
    identificar automaticamente o servidor e a competência pelo texto
-   extraído. Use **Conferência / Validação Manual** para revisar ou corrigir
-   folhas que não foram identificadas automaticamente — esse é o passo de
-   "conferência/validação" antes do arquivamento.
-4. **🔎 Consulta & Arquivo** — busque qualquer folha já arquivada por nome,
-   matrícula ou competência, e abra/baixe o arquivo original.
-5. **✉️ Envio Acumuladores** — envia a folha arquivada (a digitalizada
+   extraído. Clique em qualquer folha na lista à esquerda para ver uma
+   prévia da imagem/PDF e confirmar (ou corrigir) o servidor/competência no
+   painel à direita — sem pop-ups, tudo na mesma tela.
+5. **📚 Histórico** — lista todas as folhas já arquivadas (geradas e
+   digitalizadas), com busca por nome/matrícula/competência e preview do
+   arquivo ao selecionar um item.
+6. **✉️ Envio Acumuladores** — envia a folha arquivada (a digitalizada
    assinada, se existir; senão a gerada) para o e-mail pessoal de cada
    servidor que acumula cargo, na competência selecionada. Mostra o status
    (Pendente/Enviado/Erro) por servidor e permite reenviar individualmente.
-6. **📊 Auditoria de Envios** — histórico completo de tentativas de envio,
+7. **📊 Auditoria de Envios** — histórico completo de tentativas de envio,
    com destinatário, competência, status e detalhes de erro (RF12).
 
 ## Gerando o executável (.exe)

@@ -1,6 +1,8 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk
 import os
+from PIL import Image
+import fitz
 
 from db import init_db, get_connection, set_config
 from excel_service import parse_and_import_excel
@@ -9,7 +11,7 @@ from pdf_service import convert_docx_to_pdf
 from ocr_service import process_scanned_file
 from email_service import (
     get_smtp_config, save_smtp_config, test_smtp_connection,
-    enviar_folha_para_acumulador,
+    test_resend_connection, enviar_folha_para_acumulador,
 )
 from arquivo_service import vincular_digitalizacao, listar_folhas_arquivadas, buscar_folha_arquivada
 
@@ -26,6 +28,29 @@ def abrir_arquivo(caminho):
         os.startfile(caminho)
     except Exception as e:
         messagebox.showerror("Erro ao abrir", f"Não foi possível abrir o arquivo:\n{e}")
+
+
+def gerar_preview_ctkimage(caminho, max_w=340, max_h=420):
+    """Gera uma miniatura (CTkImage) de PDF (1ª página) ou imagem para exibir na interface.
+    Retorna None se o arquivo não existir ou não for um tipo com preview suportado (ex: .docx)."""
+    if not caminho or not os.path.exists(caminho):
+        return None
+    ext = os.path.splitext(caminho)[1].lower()
+    try:
+        if ext == '.pdf':
+            doc = fitz.open(caminho)
+            page = doc[0]
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            doc.close()
+        elif ext in ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp'):
+            img = Image.open(caminho).convert("RGB")
+        else:
+            return None
+        img.thumbnail((max_w, max_h))
+        return ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
+    except Exception:
+        return None
 
 
 class AppDIGEP(ctk.CTk):
@@ -47,6 +72,7 @@ class AppDIGEP(ctk.CTk):
         self.carregar_acumuladores()
         self.carregar_auditoria()
         self.carregar_ocr()
+        self.atualizar_painel()
 
     def setup_ui(self):
         # Cabeçalho Principal
@@ -65,21 +91,117 @@ class AppDIGEP(ctk.CTk):
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=15, pady=10)
 
+        self.tab_painel = self.tabview.add("🏠 Painel")
         self.tab_servidores = self.tabview.add("📥 Servidores")
         self.tab_gerar = self.tabview.add("📄 Gerar Folhas")
-        self.tab_ocr = self.tabview.add("🔍 OCR & Digitalizações")
-        self.tab_consulta = self.tabview.add("🔎 Consulta & Arquivo")
+        self.tab_ocr = self.tabview.add("🔍 OCR & Conferência")
+        self.tab_historico = self.tabview.add("📚 Histórico")
         self.tab_email = self.tabview.add("✉️ Envio Acumuladores")
         self.tab_auditoria = self.tabview.add("📊 Auditoria de Envios")
         self.tab_config = self.tabview.add("⚙️ Configurações")
 
+        self.setup_tab_painel()
         self.setup_tab_servidores()
         self.setup_tab_gerar()
         self.setup_tab_ocr()
-        self.setup_tab_consulta()
+        self.setup_tab_historico()
         self.setup_tab_email()
         self.setup_tab_auditoria()
         self.setup_tab_config()
+
+    # ==================== ABA 0: PAINEL (STATUS DO FLUXO) ====================
+    def setup_tab_painel(self):
+        inner = ctk.CTkFrame(self.tab_painel, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=20, pady=20)
+
+        ctk.CTkLabel(inner, text="Fluxo de Trabalho Mensal", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(
+            inner, text="Acompanhe o andamento da competência selecionada, passo a passo.",
+            text_color="gray"
+        ).pack(anchor="w", pady=(0, 15))
+
+        frame_comp = ctk.CTkFrame(inner, fg_color="transparent")
+        frame_comp.pack(anchor="w", pady=(0, 20))
+        ctk.CTkLabel(frame_comp, text="Competência:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 10))
+        ctk.CTkEntry(frame_comp, textvariable=self.var_competencia, width=160).pack(side="left")
+        ctk.CTkButton(frame_comp, text="🔄 Atualizar Painel", command=self.atualizar_painel).pack(side="left", padx=10)
+
+        frame_steps = ctk.CTkFrame(inner, fg_color="transparent")
+        frame_steps.pack(fill="x", pady=(0, 20))
+
+        passos = [
+            ("1️⃣", "Subir Planilha", "📥 Servidores"),
+            ("2️⃣", "Gerar Folhas", "📄 Gerar Folhas"),
+            ("3️⃣", "Conferir Digitalizações", "🔍 OCR & Conferência"),
+            ("4️⃣", "Enviar aos Professores", "✉️ Envio Acumuladores"),
+        ]
+        self.step_cards = []
+        for i, (num, titulo, destino_tab) in enumerate(passos):
+            frame_steps.grid_columnconfigure(i, weight=1)
+            card = ctk.CTkFrame(frame_steps, corner_radius=10, fg_color=("gray90", "gray20"))
+            card.grid(row=0, column=i, padx=8, pady=5, sticky="nsew")
+
+            ctk.CTkLabel(card, text=num, font=ctk.CTkFont(size=26)).pack(pady=(15, 0))
+            ctk.CTkLabel(card, text=titulo, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=5)
+            lbl_status = ctk.CTkLabel(card, text="...", font=ctk.CTkFont(size=13), text_color="gray")
+            lbl_status.pack(pady=(0, 10))
+            ctk.CTkButton(
+                card, text="Ir para aba →", fg_color="transparent", border_width=1,
+                command=lambda dt=destino_tab: self.tabview.set(dt)
+            ).pack(pady=(0, 15), padx=15, fill="x")
+            self.step_cards.append(lbl_status)
+
+        ctk.CTkLabel(inner, text="📋 Atividade recente de envios", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 5))
+        self.txt_atividade = ctk.CTkTextbox(inner, height=220)
+        self.txt_atividade.pack(fill="both", expand=True)
+
+    def atualizar_painel(self):
+        if not hasattr(self, "step_cards"):
+            return
+        competencia = self.var_competencia.get().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) as c FROM servidores")
+        total_servidores = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(DISTINCT servidor_id) as c FROM folhas_geradas WHERE competencia = ?", (competencia,))
+        total_geradas = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(*) as c FROM folhas_digitalizadas WHERE status_ocr = 'Pendente Validação'")
+        total_pendentes = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(*) as c FROM servidores WHERE LOWER(acumula_cargo) = 'sim'")
+        total_acumuladores = cursor.fetchone()["c"]
+
+        cursor.execute("""
+            SELECT COUNT(*) as c FROM (
+                SELECT servidor_id, status, ROW_NUMBER() OVER (PARTITION BY servidor_id ORDER BY id DESC) as rn
+                FROM logs_envio WHERE competencia = ?
+            ) WHERE rn = 1 AND status = 'Enviado'
+        """, (competencia,))
+        total_enviados = cursor.fetchone()["c"]
+
+        cursor.execute("""
+            SELECT s.nome, l.status, l.competencia, l.enviado_em
+            FROM logs_envio l JOIN servidores s ON l.servidor_id = s.id
+            ORDER BY l.id DESC LIMIT 8
+        """)
+        atividade = cursor.fetchall()
+        conn.close()
+
+        self.step_cards[0].configure(text=f"{total_servidores} servidor(es) cadastrado(s)")
+        self.step_cards[1].configure(text=f"{total_geradas}/{total_servidores} folha(s) gerada(s)")
+        self.step_cards[2].configure(text=f"{total_pendentes} pendente(s) de conferência")
+        self.step_cards[3].configure(text=f"{total_enviados}/{total_acumuladores} enviado(s)")
+
+        self.txt_atividade.delete("1.0", "end")
+        if not atividade:
+            self.txt_atividade.insert("end", "Nenhum envio realizado ainda.\n")
+        for r in atividade:
+            icone = "✅" if r["status"] == "Enviado" else "❌"
+            self.txt_atividade.insert("end", f"{icone} {r['nome']} — {r['competencia']} — {r['status']} ({r['enviado_em']})\n")
 
     # ==================== ABA 1: SERVIDORES (EXCEL) ====================
     def setup_tab_servidores(self):
@@ -139,6 +261,7 @@ class AppDIGEP(ctk.CTk):
             messagebox.showinfo("Importação Excel", msg)
             self.carregar_servidores()
             self.carregar_acumuladores()
+            self.atualizar_painel()
 
     def carregar_servidores(self):
         for item in self.tree_servidores.get_children():
@@ -228,11 +351,8 @@ class AppDIGEP(ctk.CTk):
         lbl_mod = ctk.CTkLabel(frame_config, text="Modelo .docx:", font=ctk.CTkFont(weight="bold"))
         lbl_mod.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        self.lbl_modelo_path = ctk.CTkLabel(frame_config, text=os.path.basename(self.modelo_path), text_color="gray")
-        self.lbl_modelo_path.grid(row=1, column=1, padx=10, pady=10, sticky="w")
-
-        btn_sel_modelo = ctk.CTkButton(frame_config, text="Escolher Modelo .docx", command=self.selecionar_modelo)
-        btn_sel_modelo.grid(row=1, column=2, padx=10, pady=10)
+        self.lbl_modelo_path = ctk.CTkLabel(frame_config, text=os.path.basename(self.modelo_path) + " (padrão institucional)", text_color="gray")
+        self.lbl_modelo_path.grid(row=1, column=1, columnspan=2, padx=10, pady=10, sticky="w")
 
         btn_gerar_todas = ctk.CTkButton(
             self.tab_gerar,
@@ -245,12 +365,6 @@ class AppDIGEP(ctk.CTk):
 
         self.txt_log_gerar = ctk.CTkTextbox(self.tab_gerar, height=250)
         self.txt_log_gerar.pack(fill="both", expand=True, padx=10, pady=10)
-
-    def selecionar_modelo(self):
-        f = filedialog.askopenfilename(title="Selecione o modelo .docx", filetypes=[("Documentos Word", "*.docx")])
-        if f:
-            self.modelo_path = f
-            self.lbl_modelo_path.configure(text=os.path.basename(f))
 
     def gerar_folhas_todas(self):
         competencia = self.var_competencia.get().strip()
@@ -307,9 +421,14 @@ class AppDIGEP(ctk.CTk):
                 self.txt_log_gerar.insert("end", f"❌ Erro ao gerar para [{s_dict['matricula']}] {s_dict['nome']}: {e}\n")
 
         self.txt_log_gerar.insert("end", f"\n=== CONCLUÍDO: {sucesso_count}/{len(servidores)} folhas geradas em '{pasta_saida}' ===\n")
+        self.atualizar_painel()
 
-    # ==================== ABA 3: OCR & DIGITALIZAÇÕES ====================
+    # ==================== ABA 3: OCR & CONFERÊNCIA ====================
     def setup_tab_ocr(self):
+        self.ocr_doc_atual = None
+        self._ocr_mapa_servidor = {}
+        self._ocr_preview_img = None
+
         frame_top = ctk.CTkFrame(self.tab_ocr)
         frame_top.pack(fill="x", padx=10, pady=10)
 
@@ -321,36 +440,73 @@ class AppDIGEP(ctk.CTk):
         )
         btn_upload.pack(side="left", padx=10, pady=10)
 
-        btn_atualizar_ocr = ctk.CTkButton(frame_top, text="🔄 Atualizar", command=self.carregar_ocr)
+        btn_atualizar_ocr = ctk.CTkButton(frame_top, text="🔄 Atualizar Lista", command=self.carregar_ocr)
         btn_atualizar_ocr.pack(side="left", padx=10, pady=10)
 
-        btn_vincular = ctk.CTkButton(
-            frame_top, text="🔗 Conferência / Validação Manual",
-            command=self.abrir_dialogo_vincular, fg_color="#c9822b", hover_color="#a6691f"
-        )
-        btn_vincular.pack(side="left", padx=10, pady=10)
+        ctk.CTkLabel(
+            self.tab_ocr,
+            text="Clique em uma folha na lista à esquerda para visualizar e conferir o servidor/competência à direita.",
+            text_color="gray"
+        ).pack(padx=10, anchor="w")
 
-        btn_abrir_ocr = ctk.CTkButton(frame_top, text="👁️ Abrir Arquivo", command=self.abrir_arquivo_ocr_selecionado)
-        btn_abrir_ocr.pack(side="left", padx=10, pady=10)
+        frame_body = ctk.CTkFrame(self.tab_ocr, fg_color="transparent")
+        frame_body.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Tabela de Folhas Digitalizadas
+        # ---- Lista (esquerda) ----
+        frame_lista = ctk.CTkFrame(frame_body)
+        frame_lista.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
         columns = ("id", "caminho", "servidor", "competencia", "status")
-        self.tree_ocr = ttk.Treeview(self.tab_ocr, columns=columns, show="headings", height=14)
+        self.tree_ocr = ttk.Treeview(frame_lista, columns=columns, show="headings", height=18)
 
         self.tree_ocr.heading("id", text="ID")
         self.tree_ocr.heading("caminho", text="Arquivo")
-        self.tree_ocr.heading("servidor", text="Servidor Associado")
+        self.tree_ocr.heading("servidor", text="Servidor Sugerido")
         self.tree_ocr.heading("competencia", text="Competência")
         self.tree_ocr.heading("status", text="Status")
 
         self.tree_ocr.column("id", width=40, anchor="center")
-        self.tree_ocr.column("caminho", width=300)
-        self.tree_ocr.column("servidor", width=250)
-        self.tree_ocr.column("competencia", width=120, anchor="center")
-        self.tree_ocr.column("status", width=140, anchor="center")
+        self.tree_ocr.column("caminho", width=200)
+        self.tree_ocr.column("servidor", width=190)
+        self.tree_ocr.column("competencia", width=100, anchor="center")
+        self.tree_ocr.column("status", width=130, anchor="center")
 
-        self.tree_ocr.pack(fill="both", expand=True, padx=10, pady=10)
-        self.tree_ocr.bind("<Double-1>", lambda e: self.abrir_dialogo_vincular())
+        self.tree_ocr.pack(fill="both", expand=True)
+        self.tree_ocr.bind("<<TreeviewSelect>>", lambda e: self.selecionar_ocr())
+
+        # ---- Preview + Conferência (direita) ----
+        frame_preview = ctk.CTkFrame(frame_body, width=360)
+        frame_preview.pack(side="left", fill="y")
+        frame_preview.pack_propagate(False)
+
+        self.lbl_preview_ocr = ctk.CTkLabel(
+            frame_preview, text="Selecione uma folha\npara visualizar", text_color="gray", justify="center"
+        )
+        self.lbl_preview_ocr.pack(padx=10, pady=10, fill="x")
+
+        self.lbl_preview_ocr_arquivo = ctk.CTkLabel(frame_preview, text="", font=ctk.CTkFont(weight="bold"), wraplength=330, justify="left")
+        self.lbl_preview_ocr_arquivo.pack(padx=10, pady=(0, 10), anchor="w")
+
+        ctk.CTkLabel(frame_preview, text="Servidor correspondente:").pack(padx=10, anchor="w")
+        self.var_ocr_servidor = ctk.StringVar(value="")
+        self.combo_ocr_servidor = ctk.CTkComboBox(frame_preview, values=[], variable=self.var_ocr_servidor, width=330)
+        self.combo_ocr_servidor.pack(padx=10, pady=5)
+
+        ctk.CTkLabel(frame_preview, text="Competência (Mês/Ano):").pack(padx=10, anchor="w")
+        self.entry_ocr_competencia = ctk.CTkEntry(frame_preview, width=330)
+        self.entry_ocr_competencia.pack(padx=10, pady=5)
+
+        btn_validar = ctk.CTkButton(
+            frame_preview, text="✅ Validar e Arquivar", command=self.validar_ocr_atual,
+            fg_color="#2fa572", hover_color="#1e7e52"
+        )
+        btn_validar.pack(padx=10, pady=(15, 5), fill="x")
+
+        btn_abrir_ocr = ctk.CTkButton(
+            frame_preview, text="👁️ Abrir Arquivo Original", command=self.abrir_arquivo_ocr_selecionado,
+            fg_color="gray40", hover_color="gray30"
+        )
+        btn_abrir_ocr.pack(padx=10, pady=5, fill="x")
 
     def upload_digitalizacoes(self):
         files = filedialog.askopenfilenames(
@@ -370,6 +526,7 @@ class AppDIGEP(ctk.CTk):
                 f"{len(files) - identificados} precisam de conferência/validação manual."
             )
             self.carregar_ocr()
+            self.atualizar_painel()
 
     def carregar_ocr(self):
         for item in self.tree_ocr.get_children():
@@ -391,6 +548,64 @@ class AppDIGEP(ctk.CTk):
             self.tree_ocr.insert("", "end", values=tuple(row_list))
         conn.close()
 
+    def selecionar_ocr(self):
+        sel = self.tree_ocr.selection()
+        if not sel:
+            return
+        doc_id = self.tree_ocr.item(sel[0], "values")[0]
+        self.ocr_doc_atual = doc_id
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM folhas_digitalizadas WHERE id = ?", (doc_id,))
+        doc = cursor.fetchone()
+        cursor.execute("SELECT id, nome, matricula FROM servidores ORDER BY nome")
+        servidores = cursor.fetchall()
+        conn.close()
+        if not doc:
+            return
+
+        opcoes = [f"{s['matricula']} - {s['nome']}" for s in servidores]
+        self._ocr_mapa_servidor = {opc: s['id'] for opc, s in zip(opcoes, servidores)}
+        self.combo_ocr_servidor.configure(values=opcoes)
+        self.var_ocr_servidor.set("")
+        for opc, sid in self._ocr_mapa_servidor.items():
+            if sid == doc["servidor_id"]:
+                self.var_ocr_servidor.set(opc)
+                break
+
+        self.entry_ocr_competencia.delete(0, "end")
+        self.entry_ocr_competencia.insert(0, doc["competencia"] or self.var_competencia.get())
+
+        self.lbl_preview_ocr_arquivo.configure(text=os.path.basename(doc["caminho_arquivo"]))
+
+        img = gerar_preview_ctkimage(doc["caminho_arquivo"])
+        self._ocr_preview_img = img
+        if img:
+            self.lbl_preview_ocr.configure(image=img, text="")
+        else:
+            self.lbl_preview_ocr.configure(image=None, text="(Sem preview disponível\npara este tipo de arquivo)")
+
+    def validar_ocr_atual(self):
+        if not self.ocr_doc_atual:
+            messagebox.showinfo("Conferência", "Selecione uma folha na lista à esquerda.")
+            return
+        if not self._ocr_mapa_servidor:
+            messagebox.showwarning("Conferência", "Nenhum servidor cadastrado. Importe a planilha primeiro.")
+            return
+        opcao_sel = self.var_ocr_servidor.get()
+        if opcao_sel not in self._ocr_mapa_servidor:
+            messagebox.showwarning("Conferência", "Selecione um servidor válido na lista.")
+            return
+        competencia = self.entry_ocr_competencia.get().strip()
+        if not competencia:
+            messagebox.showwarning("Conferência", "Informe a competência.")
+            return
+        vincular_digitalizacao(self.ocr_doc_atual, self._ocr_mapa_servidor[opcao_sel], competencia, status="Validado")
+        self.carregar_ocr()
+        self.atualizar_painel()
+        messagebox.showinfo("Conferência", "Folha validada e arquivada com sucesso.")
+
     def abrir_arquivo_ocr_selecionado(self):
         sel = self.tree_ocr.selection()
         if not sel:
@@ -405,97 +620,35 @@ class AppDIGEP(ctk.CTk):
         if row:
             abrir_arquivo(row["caminho_arquivo"])
 
-    def abrir_dialogo_vincular(self):
-        sel = self.tree_ocr.selection()
-        if not sel:
-            messagebox.showinfo("Conferência / Validação", "Selecione uma folha digitalizada na lista.")
-            return
-        doc_id = self.tree_ocr.item(sel[0], "values")[0]
+    # ==================== ABA 4: HISTÓRICO DE FOLHAS ====================
+    def setup_tab_historico(self):
+        self._hist_preview_img = None
 
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM folhas_digitalizadas WHERE id = ?", (doc_id,))
-        doc = cursor.fetchone()
-        cursor.execute("SELECT id, nome, matricula FROM servidores ORDER BY nome")
-        servidores = cursor.fetchall()
-        conn.close()
-
-        if not servidores:
-            messagebox.showwarning("Conferência", "Nenhum servidor cadastrado. Importe a planilha primeiro.")
-            return
-
-        opcoes = [f"{s['matricula']} - {s['nome']}" for s in servidores]
-        mapa_opcao_id = {opc: s['id'] for opc, s in zip(opcoes, servidores)}
-
-        win = ctk.CTkToplevel(self)
-        win.title("Conferência / Validação Manual")
-        win.geometry("480x260")
-        win.grab_set()
-
-        ctk.CTkLabel(win, text=f"Arquivo: {os.path.basename(doc['caminho_arquivo'])}", font=ctk.CTkFont(weight="bold")).pack(padx=10, pady=(15, 5), anchor="w")
-
-        ctk.CTkLabel(win, text="Servidor correspondente:").pack(padx=10, pady=(10, 0), anchor="w")
-        var_servidor = ctk.StringVar(value="")
-        combo_servidor = ctk.CTkComboBox(win, values=opcoes, variable=var_servidor, width=440)
-        combo_servidor.pack(padx=10, pady=5)
-        if doc["servidor_id"]:
-            for opc, sid in mapa_opcao_id.items():
-                if sid == doc["servidor_id"]:
-                    var_servidor.set(opc)
-                    break
-
-        ctk.CTkLabel(win, text="Competência (Mês/Ano):").pack(padx=10, pady=(10, 0), anchor="w")
-        entry_competencia = ctk.CTkEntry(win, width=440)
-        entry_competencia.insert(0, doc["competencia"] or self.var_competencia.get())
-        entry_competencia.pack(padx=10, pady=5)
-
-        def salvar():
-            opcao_sel = var_servidor.get()
-            if opcao_sel not in mapa_opcao_id:
-                messagebox.showwarning("Conferência", "Selecione um servidor válido na lista.")
-                return
-            competencia = entry_competencia.get().strip()
-            if not competencia:
-                messagebox.showwarning("Conferência", "Informe a competência.")
-                return
-            vincular_digitalizacao(doc_id, mapa_opcao_id[opcao_sel], competencia, status="Validado")
-            win.destroy()
-            self.carregar_ocr()
-            messagebox.showinfo("Conferência", "Folha validada e associada com sucesso.")
-
-        btn_salvar = ctk.CTkButton(win, text="✅ Validar e Arquivar", command=salvar, fg_color="#2fa572", hover_color="#1e7e52")
-        btn_salvar.pack(padx=10, pady=20, fill="x")
-
-    # ==================== ABA 4: CONSULTA & ARQUIVO ====================
-    def setup_tab_consulta(self):
-        frame_filtros = ctk.CTkFrame(self.tab_consulta)
+        frame_filtros = ctk.CTkFrame(self.tab_historico)
         frame_filtros.pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkLabel(frame_filtros, text="Nome:").grid(row=0, column=0, padx=5, pady=10)
-        self.entry_filtro_nome = ctk.CTkEntry(frame_filtros, width=200)
-        self.entry_filtro_nome.grid(row=0, column=1, padx=5, pady=10)
+        ctk.CTkLabel(frame_filtros, text="Buscar por nome/matrícula:").pack(side="left", padx=(10, 5), pady=10)
+        self.entry_filtro_nome = ctk.CTkEntry(frame_filtros, width=220)
+        self.entry_filtro_nome.pack(side="left", padx=5, pady=10)
+        self.entry_filtro_nome.bind("<KeyRelease>", lambda e: self.buscar_folhas_arquivadas())
 
-        ctk.CTkLabel(frame_filtros, text="Matrícula:").grid(row=0, column=2, padx=5, pady=10)
-        self.entry_filtro_matricula = ctk.CTkEntry(frame_filtros, width=140)
-        self.entry_filtro_matricula.grid(row=0, column=3, padx=5, pady=10)
-
-        ctk.CTkLabel(frame_filtros, text="Competência:").grid(row=0, column=4, padx=5, pady=10)
+        ctk.CTkLabel(frame_filtros, text="Competência:").pack(side="left", padx=(15, 5), pady=10)
         self.entry_filtro_competencia = ctk.CTkEntry(frame_filtros, width=140)
-        self.entry_filtro_competencia.grid(row=0, column=5, padx=5, pady=10)
+        self.entry_filtro_competencia.pack(side="left", padx=5, pady=10)
+        self.entry_filtro_competencia.bind("<KeyRelease>", lambda e: self.buscar_folhas_arquivadas())
 
-        btn_buscar = ctk.CTkButton(frame_filtros, text="🔎 Buscar", command=self.buscar_folhas_arquivadas, fg_color="#1f538d", hover_color="#14375e")
-        btn_buscar.grid(row=0, column=6, padx=10, pady=10)
+        btn_limpar = ctk.CTkButton(frame_filtros, text="Limpar filtros", command=self.limpar_filtros_consulta, fg_color="gray40", hover_color="gray30")
+        btn_limpar.pack(side="left", padx=10, pady=10)
 
-        btn_limpar = ctk.CTkButton(frame_filtros, text="Limpar", command=self.limpar_filtros_consulta, fg_color="gray40", hover_color="gray30")
-        btn_limpar.grid(row=0, column=7, padx=5, pady=10)
+        frame_body = ctk.CTkFrame(self.tab_historico, fg_color="transparent")
+        frame_body.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        frame_acoes = ctk.CTkFrame(self.tab_consulta)
-        frame_acoes.pack(fill="x", padx=10)
-        btn_abrir = ctk.CTkButton(frame_acoes, text="📂 Abrir / Baixar Folha Selecionada", command=self.abrir_folha_consulta_selecionada, fg_color="#2fa572", hover_color="#1e7e52")
-        btn_abrir.pack(side="left", padx=10, pady=5)
+        # ---- Lista (esquerda) ----
+        frame_lista = ctk.CTkFrame(frame_body)
+        frame_lista.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-        columns = ("id", "origem", "nome", "matricula", "competencia", "status", "caminho")
-        self.tree_consulta = ttk.Treeview(self.tab_consulta, columns=columns, show="headings", height=15)
+        columns = ("id", "origem", "nome", "matricula", "competencia", "status")
+        self.tree_consulta = ttk.Treeview(frame_lista, columns=columns, show="headings", height=18)
 
         self.tree_consulta.heading("id", text="ID")
         self.tree_consulta.heading("origem", text="Origem")
@@ -503,24 +656,40 @@ class AppDIGEP(ctk.CTk):
         self.tree_consulta.heading("matricula", text="Matrícula")
         self.tree_consulta.heading("competencia", text="Competência")
         self.tree_consulta.heading("status", text="Status")
-        self.tree_consulta.heading("caminho", text="Arquivo")
 
         self.tree_consulta.column("id", width=40, anchor="center")
         self.tree_consulta.column("origem", width=90, anchor="center")
-        self.tree_consulta.column("nome", width=220)
+        self.tree_consulta.column("nome", width=200)
         self.tree_consulta.column("matricula", width=100, anchor="center")
         self.tree_consulta.column("competencia", width=110, anchor="center")
         self.tree_consulta.column("status", width=100, anchor="center")
-        self.tree_consulta.column("caminho", width=260)
 
-        self.tree_consulta.pack(fill="both", expand=True, padx=10, pady=10)
-        self.tree_consulta.bind("<Double-1>", lambda e: self.abrir_folha_consulta_selecionada())
+        self.tree_consulta.pack(fill="both", expand=True)
+        self.tree_consulta.bind("<<TreeviewSelect>>", lambda e: self.selecionar_historico())
+
+        # ---- Preview (direita) ----
+        frame_preview = ctk.CTkFrame(frame_body, width=360)
+        frame_preview.pack(side="left", fill="y")
+        frame_preview.pack_propagate(False)
+
+        self.lbl_preview_hist = ctk.CTkLabel(
+            frame_preview, text="Selecione uma folha\npara visualizar", text_color="gray", justify="center"
+        )
+        self.lbl_preview_hist.pack(padx=10, pady=10, fill="x")
+
+        self.lbl_preview_hist_info = ctk.CTkLabel(frame_preview, text="", wraplength=330, justify="left")
+        self.lbl_preview_hist_info.pack(padx=10, pady=(0, 10), anchor="w")
+
+        btn_abrir = ctk.CTkButton(
+            frame_preview, text="📂 Abrir / Baixar Arquivo", command=self.abrir_folha_consulta_selecionada,
+            fg_color="#2fa572", hover_color="#1e7e52"
+        )
+        btn_abrir.pack(padx=10, pady=10, fill="x")
 
         self.buscar_folhas_arquivadas()
 
     def limpar_filtros_consulta(self):
         self.entry_filtro_nome.delete(0, "end")
-        self.entry_filtro_matricula.delete(0, "end")
         self.entry_filtro_competencia.delete(0, "end")
         self.buscar_folhas_arquivadas()
 
@@ -528,16 +697,43 @@ class AppDIGEP(ctk.CTk):
         for item in self.tree_consulta.get_children():
             self.tree_consulta.delete(item)
 
-        resultados = listar_folhas_arquivadas(
-            self.entry_filtro_nome.get(),
-            self.entry_filtro_matricula.get(),
-            self.entry_filtro_competencia.get(),
-        )
+        termo = self.entry_filtro_nome.get()
+        competencia = self.entry_filtro_competencia.get()
+
+        resultados = list(listar_folhas_arquivadas(termo, "", competencia))
+        if termo:
+            resultados += list(listar_folhas_arquivadas("", termo, competencia))
+
+        vistos = set()
         for row in resultados:
+            chave = (row["origem"], row["id"])
+            if chave in vistos:
+                continue
+            vistos.add(chave)
             self.tree_consulta.insert("", "end", values=(
-                row["id"], row["origem"], row["nome"], row["matricula"],
-                row["competencia"], row["status"], os.path.basename(row["caminho"]) if row["caminho"] else ""
-            ), tags=(row["caminho"],))
+                row["id"], row["origem"], row["nome"], row["matricula"], row["competencia"], row["status"]
+            ), tags=(row["caminho"] or "",))
+
+    def selecionar_historico(self):
+        sel = self.tree_consulta.selection()
+        if not sel:
+            return
+        item = self.tree_consulta.item(sel[0])
+        valores = item["values"]
+        tags = item.get("tags")
+        caminho = tags[0] if tags else None
+
+        self.lbl_preview_hist_info.configure(
+            text=f"{valores[2]}\nMatrícula: {valores[3]}\nCompetência: {valores[4]} — {valores[5]}\n"
+                 f"Arquivo: {os.path.basename(caminho) if caminho else '—'}"
+        )
+
+        img = gerar_preview_ctkimage(caminho) if caminho else None
+        self._hist_preview_img = img
+        if img:
+            self.lbl_preview_hist.configure(image=img, text="")
+        else:
+            self.lbl_preview_hist.configure(image=None, text="(Sem preview disponível —\nabra o arquivo para visualizar)")
 
     def abrir_folha_consulta_selecionada(self):
         sel = self.tree_consulta.selection()
@@ -562,12 +758,15 @@ class AppDIGEP(ctk.CTk):
         lbl_metodo.grid(row=0, column=2, padx=10, pady=10)
 
         cfg = get_smtp_config()
-        self.var_metodo = ctk.StringVar(value=cfg.get("metodo_envio", "SMTP"))
+        self.var_metodo = ctk.StringVar(value=cfg.get("metodo_envio", "Resend"))
+        rb_resend = ctk.CTkRadioButton(frame_opts, text="API Resend (principal)", variable=self.var_metodo, value="Resend")
+        rb_resend.grid(row=0, column=3, padx=10, pady=10)
+
         rb_smtp = ctk.CTkRadioButton(frame_opts, text="Servidor SMTP (Gmail/Office365/UnDF)", variable=self.var_metodo, value="SMTP")
-        rb_smtp.grid(row=0, column=3, padx=10, pady=10)
+        rb_smtp.grid(row=0, column=4, padx=10, pady=10)
 
         rb_outlook = ctk.CTkRadioButton(frame_opts, text="MS Outlook Desktop (Windows)", variable=self.var_metodo, value="Outlook")
-        rb_outlook.grid(row=0, column=4, padx=10, pady=10)
+        rb_outlook.grid(row=0, column=5, padx=10, pady=10)
 
         frame_botoes = ctk.CTkFrame(self.tab_email)
         frame_botoes.pack(fill="x", padx=10)
@@ -671,6 +870,7 @@ class AppDIGEP(ctk.CTk):
         messagebox.showinfo("Envio de E-mails", resumo)
         self.carregar_acumuladores()
         self.carregar_auditoria()
+        self.atualizar_painel()
 
     def reenviar_email_selecionado(self):
         sel = self.tree_acumuladores.selection()
@@ -700,6 +900,7 @@ class AppDIGEP(ctk.CTk):
 
         self.carregar_acumuladores()
         self.carregar_auditoria()
+        self.atualizar_painel()
 
     # ==================== ABA 6: AUDITORIA ====================
     def setup_tab_auditoria(self):
@@ -748,16 +949,68 @@ class AppDIGEP(ctk.CTk):
             self.tree_auditoria.insert("", "end", values=tuple(row))
         conn.close()
 
-    # ==================== ABA 7: CONFIGURAÇÕES (SMTP) ====================
+    # ==================== ABA 7: CONFIGURAÇÕES (Resend / SMTP) ====================
     def setup_tab_config(self):
-        frame = ctk.CTkFrame(self.tab_config)
-        frame.pack(fill="x", padx=20, pady=20)
+        cfg = get_smtp_config()
 
-        ctk.CTkLabel(frame, text="Configuração de Envio de E-mail (SMTP)", font=ctk.CTkFont(size=16, weight="bold")).grid(
+        # ---- Seção API Resend (método principal) ----
+        frame_resend = ctk.CTkFrame(self.tab_config)
+        frame_resend.pack(fill="x", padx=20, pady=(20, 10))
+
+        ctk.CTkLabel(
+            frame_resend, text="Envio via API Resend (principal)",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=2, padx=10, pady=(5, 20), sticky="w")
+
+        ctk.CTkLabel(frame_resend, text="API Key (resend.com):").grid(row=1, column=0, padx=10, pady=8, sticky="w")
+        self.entry_resend_key = ctk.CTkEntry(frame_resend, width=320, show="*")
+        self.entry_resend_key.insert(0, cfg.get("resend_api_key", ""))
+        self.entry_resend_key.grid(row=1, column=1, padx=10, pady=8, sticky="w")
+
+        ctk.CTkLabel(frame_resend, text="E-mail do remetente:").grid(row=2, column=0, padx=10, pady=8, sticky="w")
+        self.entry_resend_email = ctk.CTkEntry(frame_resend, width=320)
+        self.entry_resend_email.insert(0, cfg.get("resend_remetente_email", "onboarding@resend.dev"))
+        self.entry_resend_email.grid(row=2, column=1, padx=10, pady=8, sticky="w")
+
+        ctk.CTkLabel(frame_resend, text="Nome do remetente:").grid(row=3, column=0, padx=10, pady=8, sticky="w")
+        self.entry_resend_nome = ctk.CTkEntry(frame_resend, width=320)
+        self.entry_resend_nome.insert(0, cfg.get("resend_remetente_nome", "DIGEP - UnDF"))
+        self.entry_resend_nome.grid(row=3, column=1, padx=10, pady=8, sticky="w")
+
+        lbl_dica_resend = ctk.CTkLabel(
+            frame_resend,
+            text=(
+                "Dica: crie uma conta gratuita em resend.com, gere uma API Key e verifique um domínio\n"
+                "(ou use o domínio de teste onboarding@resend.dev — nesse caso, a Resend só entrega\n"
+                "e-mails para o endereço cadastrado na sua própria conta Resend, até verificar um domínio).\n"
+                "Não precisa de usuário/senha de e-mail — apenas a API Key."
+            ),
+            text_color="gray", justify="left"
+        )
+        lbl_dica_resend.grid(row=4, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
+
+        frame_botoes_resend = ctk.CTkFrame(self.tab_config)
+        frame_botoes_resend.pack(fill="x", padx=20)
+
+        btn_testar_resend = ctk.CTkButton(
+            frame_botoes_resend, text="🔌 Testar API Key Resend",
+            command=self.testar_conexao_resend, fg_color="#1f538d", hover_color="#14375e"
+        )
+        btn_testar_resend.pack(side="left", padx=(0, 10), pady=10)
+
+        btn_salvar = ctk.CTkButton(frame_botoes_resend, text="💾 Salvar Configuração", command=self.salvar_config_smtp, fg_color="#2fa572", hover_color="#1e7e52")
+        btn_salvar.pack(side="left", pady=10)
+
+        self.lbl_status_resend = ctk.CTkLabel(self.tab_config, text="", text_color="gray")
+        self.lbl_status_resend.pack(padx=20, pady=(0, 10), anchor="w")
+
+        # ---- Seção SMTP (alternativa) ----
+        frame = ctk.CTkFrame(self.tab_config)
+        frame.pack(fill="x", padx=20, pady=(10, 20))
+
+        ctk.CTkLabel(frame, text="Envio via SMTP (alternativa)", font=ctk.CTkFont(size=16, weight="bold")).grid(
             row=0, column=0, columnspan=2, padx=10, pady=(5, 20), sticky="w"
         )
-
-        cfg = get_smtp_config()
 
         ctk.CTkLabel(frame, text="Servidor SMTP (host):").grid(row=1, column=0, padx=10, pady=8, sticky="w")
         self.entry_smtp_host = ctk.CTkEntry(frame, width=280)
@@ -801,14 +1054,11 @@ class AppDIGEP(ctk.CTk):
         frame_botoes = ctk.CTkFrame(self.tab_config)
         frame_botoes.pack(fill="x", padx=20)
 
-        btn_testar = ctk.CTkButton(frame_botoes, text="🔌 Testar Conexão", command=self.testar_conexao_smtp, fg_color="#1f538d", hover_color="#14375e")
+        btn_testar = ctk.CTkButton(frame_botoes, text="🔌 Testar Conexão SMTP", command=self.testar_conexao_smtp, fg_color="#1f538d", hover_color="#14375e")
         btn_testar.pack(side="left", padx=(0, 10), pady=10)
 
-        btn_salvar = ctk.CTkButton(frame_botoes, text="💾 Salvar Configuração", command=self.salvar_config_smtp, fg_color="#2fa572", hover_color="#1e7e52")
-        btn_salvar.pack(side="left", pady=10)
-
         self.lbl_status_smtp = ctk.CTkLabel(self.tab_config, text="", text_color="gray")
-        self.lbl_status_smtp.pack(padx=20, pady=10, anchor="w")
+        self.lbl_status_smtp.pack(padx=20, pady=(0, 10), anchor="w")
 
     def _config_smtp_do_formulario(self):
         return {
@@ -818,6 +1068,9 @@ class AppDIGEP(ctk.CTk):
             "smtp_password": self.entry_smtp_pass.get(),
             "smtp_remetente_nome": self.entry_smtp_remetente.get().strip() or "DIGEP - UnDF",
             "smtp_use_tls": "1" if self.var_use_tls.get() else "0",
+            "resend_api_key": self.entry_resend_key.get().strip(),
+            "resend_remetente_email": self.entry_resend_email.get().strip(),
+            "resend_remetente_nome": self.entry_resend_nome.get().strip() or "DIGEP - UnDF",
         }
 
     def testar_conexao_smtp(self):
@@ -828,9 +1081,17 @@ class AppDIGEP(ctk.CTk):
         cor = "#2fa572" if ok else "#c0392b"
         self.lbl_status_smtp.configure(text=msg, text_color=cor)
 
+    def testar_conexao_resend(self):
+        cfg = self._config_smtp_do_formulario()
+        self.lbl_status_resend.configure(text="Testando API Key...", text_color="gray")
+        self.update_idletasks()
+        ok, msg = test_resend_connection(cfg)
+        cor = "#2fa572" if ok else "#c0392b"
+        self.lbl_status_resend.configure(text=msg, text_color=cor)
+
     def salvar_config_smtp(self):
         cfg = self._config_smtp_do_formulario()
-        cfg["metodo_envio"] = getattr(self, "var_metodo", ctk.StringVar(value="SMTP")).get()
+        cfg["metodo_envio"] = getattr(self, "var_metodo", ctk.StringVar(value="Resend")).get()
         save_smtp_config(cfg)
         messagebox.showinfo("Configurações", "Configuração de e-mail salva com sucesso.")
 
