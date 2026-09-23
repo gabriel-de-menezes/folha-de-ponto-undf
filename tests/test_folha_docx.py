@@ -9,7 +9,7 @@ from folha_ponto.dominio.entidades import Servidor
 from folha_ponto.infraestrutura.folha_docx import _celulas_unicas, preencher_folha
 
 MODELO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      "Modelo de folha de ponto - Exemplo.docx")
+                      "recursos", "Modelo de folha de ponto - Exemplo.docx")
 
 
 class TestFolhaDocx(unittest.TestCase):

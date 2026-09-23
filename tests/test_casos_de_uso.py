@@ -72,7 +72,9 @@ class TestCasosDeUso(unittest.TestCase):
 
     def setUp(self):
         self.pasta = tempfile.mkdtemp()
-        shutil.copy(os.path.join(RAIZ, "Modelo de folha de ponto - Exemplo.docx"), self.pasta)
+        os.makedirs(os.path.join(self.pasta, "recursos"), exist_ok=True)
+        shutil.copy(os.path.join(RAIZ, "recursos", "Modelo de folha de ponto - Exemplo.docx"),
+                    os.path.join(self.pasta, "recursos"))
         self.email = EmailFalso()
         self.s = montar_servicos(self.pasta, servico_email=self.email, gerador_folhas=GeradorFalso(self.pasta))
         self.s.configuracoes.salvar_email(ConfiguracaoEmail(usuario="digep@gmail.com", senha="x"))

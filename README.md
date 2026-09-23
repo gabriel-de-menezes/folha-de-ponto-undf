@@ -66,7 +66,7 @@ dos dados, SHA-256 de cada arquivo, servidores envolvidos e o resultado de cada 
 ### 1. Gerar e enviar folhas de ponto
 1. **Mês e planilha** — escolha o mês (vai no cabeçalho e define o calendário da
    folha) e **use a planilha base do sistema** ou **envie uma nova planilha**
-   (no formato de `Planilha de professores - exemplo.xlsx`).
+   (no formato de `recursos/Planilha de professores - exemplo.xlsx`).
 2. **Conferir folhas** — lista dos servidores; clique no nome para ver a folha
    gerada (.pdf, ou .docx se não houver Word/LibreOffice).
 3. **Enviar por e-mail** — lista de destinatários com caixas de seleção; confirme
@@ -94,6 +94,22 @@ python build_exe.py
 ```
 
 O executável único é gerado em `dist/DIGEP_Folha_de_Ponto.exe`.
+
+## Gerando o instalador (Setup.exe)
+
+Para facilitar a instalação e demonstração em outros computadores (sem precisar
+copiar o `.exe` avulso), há um instalador feito com o [Inno Setup](https://jrsoftware.org/isdl.php)
+(gratuito):
+
+1. Gere o executável primeiro (`python build_exe.py`).
+2. Instale o Inno Setup no Windows.
+3. Abra `installer/DIGEP_Setup.iss` no Inno Setup Compiler e clique em **Compile**
+   (ou rode `ISCC installer\DIGEP_Setup.iss` no prompt de comando).
+4. O instalador final é gerado em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`.
+
+O instalador cria atalho no Menu Iniciar (e, opcionalmente, na Área de Trabalho),
+grava um desinstalador em "Adicionar ou remover programas" e, ao final, oferece
+abrir o app — tudo em português.
 
 ## Testes
 
@@ -147,4 +163,8 @@ folha_ponto/
     ├── tema.py                 cores claro/escuro e fontes
     └── utilitarios.py          abrir/salvar arquivos, miniaturas
 tests/                          unittest
+recursos/                       modelo .docx e planilha padrão usados em runtime (embutidos no .exe)
+exemplos/                       planilhas de demonstração (não usadas pelo código)
+docs/                           plano de implementação e prompt original do projeto
+installer/                      script do instalador (Inno Setup)
 ```

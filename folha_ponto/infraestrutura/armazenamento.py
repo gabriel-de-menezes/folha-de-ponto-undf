@@ -4,8 +4,8 @@ import os
 import shutil
 import sys
 
-MODELO_FOLHA = "Modelo de folha de ponto - Exemplo.docx"
-MODELO_PLANILHA = "Planilha de professores - exemplo.xlsx"
+MODELO_FOLHA = os.path.join("recursos", "Modelo de folha de ponto - Exemplo.docx")
+MODELO_PLANILHA = os.path.join("recursos", "Planilha de professores - exemplo.xlsx")
 
 
 def pasta_padrao_app():
