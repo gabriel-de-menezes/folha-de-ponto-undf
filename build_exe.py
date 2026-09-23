@@ -13,6 +13,10 @@ def build():
         "--name=DIGEP_Folha_de_Ponto",
         "--add-data=Modelo de folha de ponto - Exemplo.docx;.",
         "--add-data=Planilha de professores - exemplo.xlsx;.",
+        "--collect-data=customtkinter",
+        "--hidden-import=pythoncom",
+        "--hidden-import=win32com.client",
+        "--collect-submodules=folha_ponto",
         "main.py"
     ]
     
