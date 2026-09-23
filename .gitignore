@@ -5,3 +5,6 @@ build/
 folha_ponto.db
 output_test/
 Folhas_Geradas/
+Folhas_Digitalizadas/
+Relatorios_Auditoria/
+dados/
