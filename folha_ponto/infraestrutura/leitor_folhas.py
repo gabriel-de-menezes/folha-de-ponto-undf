@@ -1,10 +1,11 @@
 """Extração de texto das folhas: camada de texto do PDF (PyMuPDF) e OCR (Tesseract)."""
+import hashlib
 import os
 import shutil
 
 import pymupdf
 import pytesseract
-from PIL import Image, ImageOps
+from PIL import Image
 
 
 def _configurar_tesseract():
@@ -21,32 +22,64 @@ def _configurar_tesseract():
 
 
 class LeitorFolhasTesseract:
-    def __init__(self, max_paginas=3, dpi=300):
+    """Lê PDFs página a página: cada página é uma folha de ponto."""
+
+    def __init__(self, dpi=300):
         _configurar_tesseract()
-        self.max_paginas = max_paginas
         self.dpi = dpi  # 72 dpi (padrão do PyMuPDF) é baixo demais para OCR
 
     @staticmethod
-    def texto_direto(caminho):
-        """Texto já existente no PDF. Rápido; vazio em imagens e PDFs escaneados."""
+    def e_pdf(caminho):
+        """Extensão .pdf e cabeçalho %PDF (um JPG renomeado para .pdf não passa)."""
         if not caminho.lower().endswith(".pdf"):
-            return ""
+            return False
+        try:
+            with open(caminho, "rb") as f:
+                return b"%PDF" in f.read(1024)
+        except OSError:
+            return False
+
+    @staticmethod
+    def contar_paginas(caminho):
+        with pymupdf.open(caminho) as doc:
+            return len(doc)
+
+    @staticmethod
+    def texto_pagina(caminho, pagina):
+        """Texto já existente na página (1..n). Rápido; vazio em PDFs escaneados."""
         try:
             with pymupdf.open(caminho) as doc:
-                return "".join(page.get_text() for page in doc)
+                return doc[pagina - 1].get_text()
         except Exception:
             return ""
 
-    def texto_ocr(self, caminho):
-        if caminho.lower().endswith(".pdf"):
-            with pymupdf.open(caminho) as doc:
-                texto = ""
-                for page in list(doc)[:self.max_paginas]:
-                    pix = page.get_pixmap(dpi=self.dpi)
-                    texto += self._ocr(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
-                return texto
-        # exif_transpose: fotos de celular vêm "deitadas", com a rotação só nos metadados
-        return self._ocr(ImageOps.exif_transpose(Image.open(caminho)).convert("RGB"))
+    @staticmethod
+    def assinatura_pagina(caminho, pagina):
+        """SHA-256 do conteúdo da página (desenho + imagens). Estável: a mesma folha tem a mesma assinatura
+        mesmo vindo de outro arquivo ou sendo regravada, ao contrário do hash dos bytes do PDF."""
+        h = hashlib.sha256()
+        with pymupdf.open(caminho) as doc:
+            pg = doc[pagina - 1]
+            h.update(pg.read_contents())
+            h.update(pg.get_text().encode())
+            for img in pg.get_images(full=True):
+                try:
+                    h.update(doc.extract_image(img[0])["image"])
+                except Exception:
+                    h.update(str(img[0]).encode())
+        return h.hexdigest()
+
+    def ocr_pagina(self, caminho, pagina):
+        with pymupdf.open(caminho) as doc:
+            pix = doc[pagina - 1].get_pixmap(dpi=self.dpi)
+            return self._ocr(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
+
+    @staticmethod
+    def salvar_pagina(caminho, pagina, destino):
+        """Grava só a página indicada como um PDF próprio."""
+        with pymupdf.open(caminho) as origem, pymupdf.open() as novo:
+            novo.insert_pdf(origem, from_page=pagina - 1, to_page=pagina - 1)
+            novo.save(destino)
 
     @staticmethod
     def _ocr(imagem):

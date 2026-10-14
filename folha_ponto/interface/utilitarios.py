@@ -8,8 +8,7 @@ import customtkinter as ctk
 import pymupdf
 from PIL import Image, ImageOps
 
-TIPOS_FOLHA_ASSINADA = [("PDF ou imagens", "*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp"), ("PDF", "*.pdf"),
-                        ("Imagens", "*.png *.jpg *.jpeg *.tif *.tiff *.bmp")]
+TIPOS_FOLHA_PDF = [("Arquivos PDF", "*.pdf")]
 TIPOS_PLANILHA = [("Planilhas Excel", "*.xlsx *.xlsm")]
 
 

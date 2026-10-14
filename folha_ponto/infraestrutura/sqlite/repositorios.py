@@ -98,12 +98,18 @@ class RepositorioFolhasSQLite(_Base):
             """, (caminho, servidor_id, competencia, status, texto, hash_arquivo, metodo))
             return cur.lastrowid
 
-    def vincular_digitalizada(self, doc_id, servidor_id, competencia, status):
+    def vincular_digitalizada(self, doc_id, servidor_id, competencia, status, caminho=None):
         with self._conexao() as conn:
             conn.execute("""
                 UPDATE folhas_digitalizadas SET servidor_id = ?, competencia = ?, status_ocr = ?,
-                       atualizado_em = CURRENT_TIMESTAMP WHERE id = ?
-            """, (servidor_id, competencia, status, doc_id))
+                       caminho_arquivo = COALESCE(?, caminho_arquivo), atualizado_em = CURRENT_TIMESTAMP WHERE id = ?
+            """, (servidor_id, competencia, status, caminho, doc_id))
+
+    def substituir_digitalizada(self, caminho, novo_caminho):
+        """A folha arquivada em `caminho` virou backup (_OLD_): deixa de aparecer como folha vigente."""
+        with self._conexao() as conn:
+            conn.execute("""UPDATE folhas_digitalizadas SET caminho_arquivo = ?, status_ocr = 'Substituída',
+                            atualizado_em = CURRENT_TIMESTAMP WHERE caminho_arquivo = ?""", (novo_caminho, caminho))
 
     def listar_arquivadas(self, termo="", competencia=""):
         rows = self._todos("""
@@ -133,7 +139,7 @@ class RepositorioFolhasSQLite(_Base):
 
 _CAMPOS_OPERACAO = ("tipo", "competencia", "iniciado_em", "status", "concluido_em", "usuario", "computador", "origem",
                     "origem_hash", "metodo_envio", "relatorio")
-_CAMPOS_ITEM = ("servidor_id", "nome", "matricula", "cpf", "email", "arquivo", "arquivo_hash", "identificacao",
+_CAMPOS_ITEM = ("servidor_id", "nome", "matricula", "cpf", "email", "competencia", "arquivo", "arquivo_hash", "identificacao",
                 "observacao", "selecionado", "envio_status", "envio_detalhe", "enviado_em")
 
 
@@ -194,7 +200,8 @@ class RepositorioOperacoesSQLite(_Base):
 
     def itens(self, op_id):
         rows = self._todos("SELECT * FROM operacao_itens WHERE operacao_id = ? ORDER BY servidor_id IS NULL, nome", (op_id,))
-        return [ItemOperacao(**{c: (bool(r[c]) if c == "selecionado" else r[c]) for c in _CAMPOS_ITEM}) for r in rows]
+        return [ItemOperacao(**{c: (bool(r[c]) if c == "selecionado" else (r[c] or "" if c == "competencia" else r[c]))
+                               for c in _CAMPOS_ITEM}) for r in rows]
 
 
 class RepositorioEnviosSQLite(_Base):

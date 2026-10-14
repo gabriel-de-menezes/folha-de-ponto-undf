@@ -63,3 +63,9 @@ def rotulo_competencia(competencia):
     if not mes:
         return competencia
     return f"{MESES[mes - 1].capitalize()}/{ano}"
+
+
+def competencia_iso(competencia):
+    """"SETEMBRO/2026" -> "2026-09" (usado em pastas e nomes de arquivo). Vazio se não reconhecida."""
+    mes, ano = separar_competencia(competencia)
+    return f"{ano}-{mes:02d}" if mes else ""

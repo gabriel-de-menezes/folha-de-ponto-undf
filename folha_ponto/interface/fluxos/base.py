@@ -133,7 +133,7 @@ class EtapaEnvio(ctk.CTkFrame):
         self.lbl_metodo.pack(side="right")
         self.tabela = Tabela(self, self.app, [
             ("nome", "Servidor", 230), ("matricula", "Matrícula", 90, "center"), ("email", "E-mail", 230),
-            ("folha", "Folha em anexo", 200), ("acumula", "Acumula", 80, "center"),
+            ("mes", "Mês", 110, "center"), ("folha", "Folha em anexo", 190), ("acumula", "Acumula", 70, "center"),
         ], altura=8, checkbox=True, ao_marcar=self.atualizar_rotulos, ao_duplo_clique=self._abrir_folha, menu=self._menu)
         self.tabela.pack(fill="both", expand=True)
         ctk.CTkLabel(self, text="Clique na caixa ☐ para marcar ou desmarcar · clique no ☐ do cabeçalho para todos · "
@@ -148,10 +148,11 @@ class EtapaEnvio(ctk.CTkFrame):
         f.btn_meio.pack(side="right", padx=8)
         f.btn_avancar.configure(command=self.enviar)
         f.cab.subtitulo.configure(text=rotulo_competencia(f.competencia))
-        self._itens = {str(i.servidor_id): i for i in f.itens if i.servidor_id and i.arquivo}
+        self._itens = {f"{i.servidor_id}|{i.competencia}": i for i in f.itens if i.servidor_id and i.arquivo}
         bloqueados = {k for k, i in self._itens.items() if not i.tem_email}
         marcados = {k for k, i in self._itens.items() if i.selecionado} - bloqueados
-        linhas = [(k, (i.nome, i.matricula, i.email or "⚠ sem e-mail cadastrado", os.path.basename(i.arquivo), i.acumula or ""),
+        linhas = [(k, (i.nome, i.matricula, i.email or "⚠ sem e-mail cadastrado", rotulo_competencia(i.competencia or f.competencia),
+                          os.path.basename(i.arquivo), i.acumula or ""),
                    "aviso" if k in bloqueados else None)
                   for k, i in sorted(self._itens.items(), key=lambda kv: kv[1].nome)]
         self.tabela.preencher(linhas, "Nenhuma folha disponível para envio.", marcados=marcados, bloqueados=bloqueados)
@@ -172,7 +173,7 @@ class EtapaEnvio(ctk.CTkFrame):
         self.lbl_metodo.configure(text=f"Envio via {cfg.descricao()} ·" if cfg.configurado else "⚠ E-mail ainda não configurado ·")
         n = len(self.tabela.marcados)
         self.lbl_contagem.configure(text=f"{n} de {len(self._itens)} servidor(es) selecionado(s) para receber a folha "
-                                         f"de {rotulo_competencia(self.fluxo.competencia)}")
+                                         f"({rotulo_competencia(self.fluxo.competencia)})")
         self.fluxo.btn_avancar.configure(text=f"Enviar {n} e-mail(s)" if n else "Enviar e-mails",
                                          state="normal" if n else "disabled")
 
@@ -182,7 +183,7 @@ class EtapaEnvio(ctk.CTkFrame):
 
     def _menu(self, iid):
         return [("Abrir folha", self._abrir_folha),
-                ("Editar dados / e-mail do servidor…", lambda i: DialogoServidor(self.app, int(i), self._pos_edicao))]
+                ("Editar dados / e-mail do servidor…", lambda i: DialogoServidor(self.app, int(i.split("|")[0]), self._pos_edicao))]
 
     def _pos_edicao(self, servidor):
         for item in self.fluxo.itens:
@@ -204,7 +205,7 @@ class EtapaEnvio(ctk.CTkFrame):
             return
         if not messagebox.askyesno(
                 "Confirmar envio",
-                f"Enviar a folha de ponto de {rotulo_competencia(f.competencia)} para {len(selecionados)} servidor(es)?\n\n"
+                f"Enviar {len(selecionados)} folha(s) de ponto ({rotulo_competencia(f.competencia)})?\n\n"
                 f"Cada servidor recebe apenas a sua própria folha, no e-mail cadastrado.\nEnvio via {cfg.descricao()}."):
             return
 

@@ -68,6 +68,7 @@ class ItemOperacao:
     cpf: str = ""
     email: str = ""
     acumula: str = ""
+    competencia: str = ""
     arquivo: str | None = None
     arquivo_hash: str = ""
     identificacao: str = ""
@@ -148,9 +149,12 @@ class FolhaAssinada:
     original: str
     servidor_id: int | None = None
     metodo: str = MetodoIdentificacao.NAO_IDENTIFICADO
-    competencia_lida: str = ""
+    competencia_lida: str = ""   # mês lido do conteúdo da folha
+    competencia: str = ""        # mês efetivo (lido ou informado na conferência)
+    pagina: int = 1              # página do PDF de origem
     observacao: str = ""
     duplicado: bool = False
+    substitui: str = ""          # caminho de folha já arquivada que esta versão vai substituir
 
 
 @dataclass

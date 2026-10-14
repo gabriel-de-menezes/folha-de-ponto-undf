@@ -39,7 +39,7 @@ class EnviarFolhas:
         with self.email.abrir(config) as enviador:
             for n, item in enumerate(selecionados):
                 progresso(n, len(selecionados), f"Enviando para {item.nome}")
-                ok, msg = self._enviar(enviador, item, competencia, tipo, op_id)
+                ok, msg = self._enviar(enviador, item, item.competencia or competencia, tipo, op_id)
                 if not ok:
                     erros.append(f"{item.nome}: {msg}")
 

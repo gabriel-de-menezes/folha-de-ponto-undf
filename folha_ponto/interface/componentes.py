@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from ..dominio.competencia import MESES, montar_competencia
+from ..dominio.competencia import MESES, montar_competencia, separar_competencia
 from ..dominio.regras import ErroDominio
 from . import tema as T
 from .utilitarios import abrir_arquivo, gerar_preview
@@ -215,6 +215,14 @@ class SeletorMes(ctk.CTkFrame):
     def get(self):
         mes = [m.capitalize() for m in MESES].index(self.opt_mes.get()) + 1
         return montar_competencia(mes, self.opt_ano.get())
+
+    def set(self, competencia):
+        mes, ano = separar_competencia(competencia)
+        if mes:
+            self.opt_mes.set(MESES[mes - 1].capitalize())
+            if str(ano) not in self.opt_ano.cget("values"):
+                self.opt_ano.configure(values=sorted({*self.opt_ano.cget("values"), str(ano)}))
+            self.opt_ano.set(str(ano))
 
 
 class Etapas(ctk.CTkFrame):

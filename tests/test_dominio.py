@@ -2,7 +2,7 @@ import unittest
 
 from folha_ponto.dominio.competencia import normalizar_competencia, rotulo_competencia, separar_competencia
 from folha_ponto.dominio.entidades import FolhaAssinada, ItemOperacao, Servidor, TipoOperacao
-from folha_ponto.dominio.regras import identificar_servidor, mascarar_cpf, montar_email, resolver_conflitos
+from folha_ponto.dominio.regras import identificar_servidor, mascarar_cpf, nome_arquivo_folha, pasta_folhas_mes, montar_email, resolver_conflitos
 
 
 class TestCompetencia(unittest.TestCase):
@@ -49,7 +49,18 @@ class TestRegras(unittest.TestCase):
         b = FolhaAssinada(doc_id=2, caminho="b", hash="2", original="b.pdf", servidor_id=7)
         resolver_conflitos([a, b])
         self.assertEqual((a.servidor_id, b.servidor_id), (7, None))
-        self.assertIn("outra folha", b.observacao)
+        self.assertIn("Duplicada", b.observacao)
+
+    def test_mesmo_servidor_em_meses_diferentes_nao_conflita(self):
+        a = FolhaAssinada(doc_id=1, caminho="a", hash="1", original="a.pdf", servidor_id=7, competencia="JULHO/2026")
+        b = FolhaAssinada(doc_id=2, caminho="b", hash="2", original="a.pdf", servidor_id=7, competencia="AGOSTO/2026")
+        resolver_conflitos([a, b])
+        self.assertEqual((a.servidor_id, b.servidor_id), (7, 7))
+
+    def test_nome_padrao_da_folha(self):
+        self.assertEqual(nome_arquivo_folha("  MARIA  da Silva-Sántos ", "JANEIRO/2027"), "Maria_Da_Silva_Santos-2027-01.pdf")
+        self.assertEqual(nome_arquivo_folha("D'Ávila / João", "dez/2026"), "D_Avila_Joao-2026-12.pdf")
+        self.assertEqual(pasta_folhas_mes("FEVEREIRO/2027"), "Folhas_2027-02")
 
     def test_mascara_cpf(self):
         self.assertEqual(mascarar_cpf("111.222.333-01"), "111.***.***-01")

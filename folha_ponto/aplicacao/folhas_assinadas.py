@@ -1,5 +1,7 @@
-"""Caso de uso: importar folhas assinadas (PDF/imagem), identificar o dono de cada uma e conferir."""
+"""Caso de uso: importar folhas assinadas (PDF), separar uma folha por página, identificar o servidor e o mês
+de cada uma e conferir antes de arquivar."""
 import os
+from collections import Counter
 
 from ..dominio.competencia import normalizar_competencia, rotulo_competencia
 from ..dominio.entidades import FolhaAssinada, ItemOperacao, MetodoIdentificacao, TipoOperacao
@@ -7,7 +9,8 @@ from ..dominio.regras import ErroDominio, identificar_servidor, resolver_conflit
 from .portas import sem_progresso
 
 LIMITE_ARQUIVOS = 200
-EXTENSOES = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
+EXTENSOES = (".pdf",)
+VARIOS_MESES = "VÁRIOS MESES"
 
 
 class FolhasAssinadas:
@@ -22,146 +25,248 @@ class FolhasAssinadas:
         return self.leitor.ocr_disponivel()
 
     # ---------- leitura ----------
-    def identificar(self, caminho):
-        """1º lê o texto do próprio PDF (matrícula/nome); se não identificar, usa OCR (sempre, para imagens).
+    def validar_arquivos(self, caminhos):
+        """Só PDFs de verdade (extensão e cabeçalho). Levanta ErroDominio listando os recusados."""
+        if len(caminhos) > LIMITE_ARQUIVOS:
+            raise ErroDominio(f"Selecione no máximo {LIMITE_ARQUIVOS} arquivos por vez (foram {len(caminhos)}).")
+        invalidos = [os.path.basename(c) for c in caminhos if not self.leitor.e_pdf(c)]
+        if invalidos:
+            raise ErroDominio("Apenas arquivos PDF (.pdf) são aceitos. Arquivo(s) recusado(s): "
+                              + ", ".join(invalidos[:5]) + ("…" if len(invalidos) > 5 else "") + ".")
+
+    def identificar(self, caminho, pagina, servidores):
+        """1º lê o texto da própria página (matrícula/nome); se não identificar, usa OCR.
         Retorna (servidor_id, competência lida, método, texto)."""
-        servidores = self.servidores.listar()
-        texto = self.leitor.texto_direto(caminho)
+        texto = self.leitor.texto_pagina(caminho, pagina)
         servidor_id, competencia = identificar_servidor(texto, servidores) if texto.strip() else (None, "")
-        if servidor_id:
+        if servidor_id and competencia:
             return servidor_id, competencia, MetodoIdentificacao.TEXTO, texto
+        metodo = MetodoIdentificacao.TEXTO if servidor_id else MetodoIdentificacao.NAO_IDENTIFICADO
         if self.leitor.ocr_disponivel():
             try:
-                texto_ocr = self.leitor.texto_ocr(caminho)
+                texto_ocr = self.leitor.ocr_pagina(caminho, pagina)
             except Exception as e:
                 texto_ocr, texto = "", texto or f"Erro OCR: {e}"
             if texto_ocr.strip():
-                servidor_id, comp_ocr = identificar_servidor(texto_ocr, servidores)
-                texto, competencia = texto_ocr, competencia or comp_ocr
-                if servidor_id:
-                    return servidor_id, competencia, MetodoIdentificacao.OCR, texto
-        return None, competencia, MetodoIdentificacao.NAO_IDENTIFICADO, texto
+                id_ocr, comp_ocr = identificar_servidor(texto_ocr, servidores)
+                if not servidor_id and id_ocr:
+                    servidor_id, metodo = id_ocr, MetodoIdentificacao.OCR
+                competencia = competencia or comp_ocr
+                texto = texto_ocr
+        return servidor_id, competencia, metodo, texto
 
-    def processar(self, caminho, competencia):
-        """Identifica, guarda uma cópia no arquivo do sistema e registra a folha. Se o mesmo conteúdo já
-        foi importado antes, reaproveita o registro existente."""
-        hash_arquivo = self.armazenamento.hash(caminho)
-        existente = self.folhas.digitalizada_por_hash(hash_arquivo)
-        if existente and self.armazenamento.existe(existente["caminho_arquivo"]):
-            return FolhaAssinada(doc_id=existente["id"], caminho=existente["caminho_arquivo"], hash=hash_arquivo,
-                                 original=os.path.basename(caminho), servidor_id=existente["servidor_id"],
-                                 metodo=existente["metodo_identificacao"] or MetodoIdentificacao.TEXTO, duplicado=True)
-        servidor_id, lida, metodo, texto = self.identificar(caminho)
-        arquivado = self.armazenamento.arquivar_digitalizada(caminho, competencia)
-        doc_id = self.folhas.registrar_digitalizada(
-            arquivado, servidor_id, competencia, "Processado" if servidor_id else "Pendente Validação",
-            texto[:2000], hash_arquivo, metodo)
-        folha = FolhaAssinada(doc_id=doc_id, caminho=arquivado, hash=hash_arquivo, original=os.path.basename(caminho),
-                              servidor_id=servidor_id, metodo=metodo, competencia_lida=lida)
-        if lida and normalizar_competencia(lida) != competencia:
-            folha.observacao = f"Folha indica {rotulo_competencia(lida)}"
-        return folha
+    def processar_arquivo(self, caminho, servidores, competencia_padrao=""):
+        """Separa o PDF em folhas (uma por página), guarda cada página na área de importação e registra.
+        Se a mesma página já foi importada antes, reaproveita o registro existente."""
+        original = os.path.basename(caminho)
+        resultado = []
+        for pagina in range(1, self.leitor.contar_paginas(caminho) + 1):
+            hash_pagina = self.leitor.assinatura_pagina(caminho, pagina)
+            existente = self.folhas.digitalizada_por_hash(hash_pagina)
+            if existente and self.armazenamento.existe(existente["caminho_arquivo"]):
+                lida = existente["competencia"] or ""
+                resultado.append(FolhaAssinada(
+                    doc_id=existente["id"], caminho=existente["caminho_arquivo"], hash=hash_pagina, original=original,
+                    pagina=pagina, servidor_id=existente["servidor_id"], competencia_lida=lida, competencia=lida,
+                    metodo=existente["metodo_identificacao"] or MetodoIdentificacao.TEXTO, duplicado=True,
+                    observacao="Folha já importada anteriormente"))
+                continue
+            servidor_id, lida, metodo, texto = self.identificar(caminho, pagina, servidores)
+            lida = normalizar_competencia(lida) if lida else ""
+            destino = os.path.join(self.armazenamento.pasta_importacao(), f"{hash_pagina[:16]}.pdf")
+            self.leitor.salvar_pagina(caminho, pagina, destino)
+            doc_id = self.folhas.registrar_digitalizada(
+                destino, servidor_id, lida, "Processado" if servidor_id else "Pendente Validação",
+                texto[:2000], hash_pagina, metodo)
+            folha = FolhaAssinada(doc_id=doc_id, caminho=destino, hash=hash_pagina, original=original, pagina=pagina,
+                                  servidor_id=servidor_id, metodo=metodo, competencia_lida=lida, competencia=lida)
+            if not lida:
+                folha.competencia = competencia_padrao
+                folha.observacao = "Mês não identificado na folha — informe na conferência"
+            resultado.append(folha)
+        return resultado
 
-    def importar_lote(self, caminhos, competencia, progresso=sem_progresso):
-        """Lê até LIMITE_ARQUIVOS arquivos e abre a operação de auditoria. Retorna (op_id, folhas)."""
-        if len(caminhos) > LIMITE_ARQUIVOS:
-            raise ErroDominio(f"Selecione no máximo {LIMITE_ARQUIVOS} arquivos por vez (foram {len(caminhos)}).")
-        if not self.servidores.contar():
-            raise ErroDominio("Nenhum servidor cadastrado. Defina a planilha base em Servidores primeiro.")
-        op_id = self.auditoria.iniciar(TipoOperacao.ASSINADAS, competencia, f"{len(caminhos)} arquivo(s) importado(s)")
+    def importar_lote(self, caminhos, progresso=sem_progresso):
+        """Lê os PDFs (uma folha por página) e abre a operação de auditoria. Retorna (op_id, folhas)."""
+        self.validar_arquivos(caminhos)
+        servidores = self.servidores.listar()
+        if not servidores:
+            raise ErroDominio("Nenhum servidor cadastrado. Cadastre ou importe os servidores primeiro.")
+        op_id = self.auditoria.iniciar(TipoOperacao.ASSINADAS, VARIOS_MESES, f"{len(caminhos)} arquivo(s) importado(s)")
         folhas, vistos = [], set()
         for n, caminho in enumerate(caminhos):
             progresso(n, len(caminhos), f"Lendo {os.path.basename(caminho)}")
             try:
-                folha = self.processar(caminho, competencia)
+                lidas = self.processar_arquivo(caminho, servidores)
             except Exception as e:
                 self.auditoria.evento(op_id, f"Erro ao ler {os.path.basename(caminho)}: {e}")
                 continue
-            if folha.doc_id not in vistos:
-                vistos.add(folha.doc_id)
-                folhas.append(folha)
+            for folha in lidas:
+                if folha.doc_id not in vistos:
+                    vistos.add(folha.doc_id)
+                    folhas.append(folha)
         resolver_conflitos(folhas)
+        self._marcar_substituicoes(folhas)
+        self._atualizar_competencia_operacao(op_id, folhas)
         por_texto = sum(1 for f in folhas if f.servidor_id and f.metodo == MetodoIdentificacao.TEXTO)
         por_ocr = sum(1 for f in folhas if f.servidor_id and f.metodo == MetodoIdentificacao.OCR)
         sem = sum(1 for f in folhas if not f.servidor_id)
-        self.auditoria.atualizar(op_id, origem=f"{len(folhas)} arquivo(s) importado(s)",
+        sem_mes = sum(1 for f in folhas if not f.competencia)
+        self.auditoria.atualizar(op_id, origem=f"{len(caminhos)} arquivo(s) importado(s)",
                                  origem_hash=folhas[0].hash if len(folhas) == 1 else "")
-        self.auditoria.evento(op_id, f"{len(folhas)} arquivo(s) lido(s): {por_texto} identificado(s) pelo texto do PDF, "
-                                     f"{por_ocr} por OCR, {sem} sem identificação.")
+        self.auditoria.evento(
+            op_id, f"{len(caminhos)} arquivo(s) / {len(folhas)} folha(s) lida(s): {por_texto} identificada(s) pelo "
+                   f"texto do PDF, {por_ocr} por OCR, {sem} sem servidor"
+                   + (f", {sem_mes} sem mês identificado." if sem_mes else "."))
         self.auditoria.salvar_itens(op_id, self.itens_auditoria(self.itens(folhas), folhas))
         return op_id, folhas
 
+    def _marcar_substituicoes(self, folhas):
+        """Avisa quando a folha vai substituir uma já arquivada (a antiga vira _OLD_ ao concluir)."""
+        for f in folhas:
+            f.substitui = ""
+            if not (f.servidor_id and f.competencia) or f.duplicado:
+                continue
+            servidor = self.servidores.obter(f.servidor_id)
+            existente = self.armazenamento.caminho_folha_arquivada(servidor.nome, f.competencia)
+            if self.armazenamento.existe(existente) and os.path.abspath(existente) != os.path.abspath(f.caminho):
+                f.substitui = existente
+                if not f.observacao or f.observacao.startswith("Substitui"):
+                    f.observacao = f"Substitui a folha já arquivada de {rotulo_competencia(f.competencia)} (backup automático)"
+            elif f.observacao.startswith("Substitui"):
+                f.observacao = ""
+
+    def _atualizar_competencia_operacao(self, op_id, folhas):
+        meses = {f.competencia for f in folhas if f.competencia}
+        valor = next(iter(meses)) if len(meses) == 1 else VARIOS_MESES
+        self.auditoria.atualizar(op_id, competencia=valor)
+        return valor
+
+    @staticmethod
+    def competencia_predominante(folhas):
+        contagem = Counter(f.competencia for f in folhas if f.competencia)
+        return contagem.most_common(1)[0][0] if contagem else ""
+
     # ---------- conferência ----------
     @staticmethod
-    def folha_do_servidor(folhas, servidor_id):
-        return next((f for f in folhas if f.servidor_id == servidor_id), None)
+    def folha_do_servidor(folhas, servidor_id, competencia=None):
+        """Folha do servidor no lote; se `competencia` for informada, a daquele mês."""
+        return next((f for f in folhas if f.servidor_id == servidor_id
+                     and (competencia is None or f.competencia == competencia)), None)
 
     def atribuir(self, op_id, folhas, folha, servidor_id):
-        """Atribui a folha a um servidor. Se ele já tinha outra folha no lote, a anterior fica sem dono."""
+        """Atribui a folha a um servidor. Se ele já tinha outra folha do mesmo mês no lote, a anterior fica sem dono."""
         servidor = self.servidores.obter(servidor_id)
         if folha.servidor_id == servidor_id:
-            if not folha.observacao.startswith("Folha indica"):
-                folha.observacao = ""
             return
         anterior_dono = self.servidores.obter(folha.servidor_id) if folha.servidor_id else None
-        atual = self.folha_do_servidor(folhas, servidor_id)
-        if atual:
-            atual.servidor_id, atual.observacao = None, "Substituída por outra folha"
+        atual = self.folha_do_servidor(folhas, servidor_id, folha.competencia) if folha.competencia else None
+        if atual and atual is not folha:
+            atual.servidor_id, atual.observacao, atual.substitui = None, "Substituída por outra folha", ""
         folha.servidor_id, folha.metodo, folha.observacao = servidor_id, MetodoIdentificacao.MANUAL, ""
-        self.auditoria.evento(op_id, f"Conferência: arquivo “{folha.original}” atribuído manualmente a {servidor.nome} "
-                                     f"(matrícula {servidor.matricula})"
+        self._marcar_substituicoes(folhas)
+        self.auditoria.evento(op_id, f"Conferência: folha “{folha.original}” (pág. {folha.pagina}) atribuída "
+                                     f"manualmente a {servidor.nome} (matrícula {servidor.matricula})"
                               + (f"; antes estava com {anterior_dono.nome}." if anterior_dono else "."))
 
-    def substituir(self, op_id, folhas, servidor_id, caminho, competencia):
-        """Troca (ou define) a folha de um servidor por outro arquivo escolhido pelo usuário."""
+    def definir_competencia(self, op_id, folhas, folha, competencia):
+        """Informa (ou corrige) o mês de uma folha na conferência."""
+        competencia = normalizar_competencia(competencia)
+        antes = folha.competencia
+        if competencia == antes:
+            return
+        folha.competencia = competencia
+        if folha.servidor_id:
+            outra = next((f for f in folhas if f is not folha and f.servidor_id == folha.servidor_id
+                          and f.competencia == competencia), None)
+            if outra:
+                folha.servidor_id, folha.observacao = None, (f"Duplicada: já existe folha deste servidor em "
+                                                             f"{rotulo_competencia(competencia)} no lote")
+        if folha.observacao.startswith("Mês não identificado"):
+            folha.observacao = ""
+        self._marcar_substituicoes(folhas)
+        self._atualizar_competencia_operacao(op_id, folhas)
+        self.auditoria.evento(op_id, f"Conferência: mês da folha “{folha.original}” (pág. {folha.pagina}) definido "
+                                     f"manualmente como {rotulo_competencia(competencia)}"
+                              + (f" (antes: {rotulo_competencia(antes)})." if antes else "."))
+
+    def substituir(self, op_id, folhas, servidor_id, caminho, competencia=""):
+        """Troca (ou define) a folha de um servidor por outro PDF escolhido pelo usuário.
+        Se o PDF tiver várias páginas, a 1ª é do servidor e as demais entram no lote normalmente."""
+        self.validar_arquivos([caminho])
         servidor = self.servidores.obter(servidor_id)
-        nova = self.processar(caminho, competencia)
-        existente = next((f for f in folhas if f.doc_id == nova.doc_id), None)
-        atual = self.folha_do_servidor(folhas, servidor_id)
-        if atual and atual is not existente:
-            atual.servidor_id, atual.observacao = None, f"Substituída na folha de {servidor.nome}"
-        folha = existente or nova
-        folha.servidor_id, folha.metodo, folha.observacao = servidor_id, MetodoIdentificacao.MANUAL, ""
-        folha.original = os.path.basename(caminho)
-        if not existente:
-            folhas.append(folha)
+        novas = self.processar_arquivo(caminho, self.servidores.listar(), competencia)
+        if not novas:
+            raise ErroDominio("O arquivo não tem páginas.")
+        principal = novas[0]
+        principal_existente = next((f for f in folhas if f.doc_id == principal.doc_id), None)
+        principal = principal_existente or principal
+        if not principal.competencia:
+            principal.competencia = competencia
+        atual = self.folha_do_servidor(folhas, servidor_id, principal.competencia)
+        if atual and atual is not principal:
+            atual.servidor_id, atual.observacao, atual.substitui = None, f"Substituída na folha de {servidor.nome}", ""
+        principal.servidor_id, principal.metodo, principal.observacao = servidor_id, MetodoIdentificacao.MANUAL, ""
+        if not principal_existente:
+            folhas.append(principal)
+        for extra in novas[1:]:
+            if not any(f.doc_id == extra.doc_id for f in folhas):
+                folhas.append(extra)
+        resolver_conflitos([f for f in folhas if f is not principal])
+        self._marcar_substituicoes(folhas)
+        self._atualizar_competencia_operacao(op_id, folhas)
         self.auditoria.evento(op_id, f"Conferência: folha de {servidor.nome} (matrícula {servidor.matricula}) substituída "
                                      f"manualmente por “{os.path.basename(caminho)}”"
-                              + (f" (antes: “{atual.original}”)." if atual and atual is not existente else "."))
-        return folha
+                              + (f" (antes: “{atual.original}”)." if atual and atual is not principal else "."))
+        return principal
 
     def itens(self, folhas, anteriores=()):
         """Um item de envio por folha atribuída, mantendo a seleção feita anteriormente."""
-        selecao = {i.servidor_id: i.selecionado for i in anteriores}
+        selecao = {(i.servidor_id, i.competencia): i.selecionado for i in anteriores}
         itens = []
         for f in folhas:
             servidor = self.servidores.obter(f.servidor_id) if f.servidor_id else None
             if servidor:
                 itens.append(ItemOperacao.de_servidor(
-                    servidor, arquivo=f.caminho, arquivo_hash=f.hash, identificacao=f.metodo, observacao=f.observacao,
-                    selecionado=selecao.get(servidor.id, True)))
+                    servidor, competencia=f.competencia, arquivo=f.caminho, arquivo_hash=f.hash,
+                    identificacao=f.metodo, observacao=f.observacao,
+                    selecionado=selecao.get((servidor.id, f.competencia), True)))
         return itens
 
     @staticmethod
     def itens_auditoria(itens, folhas):
-        """Itens de envio + arquivos que ficaram sem servidor (também aparecem no relatório)."""
-        extras = [ItemOperacao(servidor_id=None, nome="(arquivo sem servidor atribuído)", arquivo=f.caminho,
-                               arquivo_hash=f.hash, identificacao=f.metodo, observacao=f.observacao or f.original,
+        """Itens de envio + folhas que ficaram sem servidor (também aparecem no relatório)."""
+        extras = [ItemOperacao(servidor_id=None, nome="(folha sem servidor atribuído)", competencia=f.competencia,
+                               arquivo=f.caminho, arquivo_hash=f.hash, identificacao=f.metodo,
+                               observacao=f.observacao or f"{f.original} (pág. {f.pagina})",
                                selecionado=False) for f in folhas if not f.servidor_id]
         return list(itens) + extras
 
-    def concluir_conferencia(self, op_id, folhas, competencia, anteriores=()):
-        """Arquiva como validadas as folhas atribuídas e devolve os itens prontos para envio."""
+    def concluir_conferencia(self, op_id, folhas, anteriores=()):
+        """Arquiva cada folha atribuída em Folhas_AAAA-MM/Nome-AAAA-MM.pdf (a versão anterior, se houver, vira
+        _OLD_ com data e hora) e devolve os itens prontos para envio."""
         atribuidas = [f for f in folhas if f.servidor_id]
         if not atribuidas:
             raise ErroDominio("Nenhuma folha está atribuída a um servidor.")
+        sem_mes = [f for f in atribuidas if not f.competencia]
+        if sem_mes:
+            raise ErroDominio(f"{len(sem_mes)} folha(s) atribuída(s) estão sem mês de referência. "
+                              "Informe o mês de cada uma na conferência.")
         for f in folhas:
-            if f.servidor_id:
-                self.folhas.vincular_digitalizada(f.doc_id, f.servidor_id, competencia, "Validado")
-            else:  # substituída ou sem dono: não pode continuar vinculada a quem a OCR/texto tinha sugerido
-                self.folhas.vincular_digitalizada(f.doc_id, None, competencia, "Pendente Validação")
+            if not f.servidor_id:  # substituída ou sem dono: não fica vinculada a quem a leitura sugeriu
+                self.folhas.vincular_digitalizada(f.doc_id, None, f.competencia, "Pendente Validação")
+                continue
+            servidor = self.servidores.obter(f.servidor_id)
+            destino, backup = self.armazenamento.arquivar_folha(f.caminho, servidor.nome, f.competencia)
+            if backup:
+                self.folhas.substituir_digitalizada(destino, backup)
+                self.auditoria.evento(op_id, f"Versão anterior de {servidor.nome} ({rotulo_competencia(f.competencia)}) "
+                                             f"preservada como {os.path.basename(backup)}.")
+            self.folhas.vincular_digitalizada(f.doc_id, f.servidor_id, f.competencia, "Validado", destino)
+            f.caminho, f.substitui = destino, ""
         itens = self.itens(folhas, anteriores)
         sem = len(folhas) - len(atribuidas)
+        self._atualizar_competencia_operacao(op_id, folhas)
         self.auditoria.evento(op_id, f"Conferência concluída: {len(itens)} folha(s) atribuída(s) e arquivada(s)"
                               + (f"; {sem} sem servidor." if sem else "."))
         self.auditoria.salvar_itens(op_id, self.itens_auditoria(itens, folhas))

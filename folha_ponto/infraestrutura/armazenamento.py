@@ -3,6 +3,9 @@ import hashlib
 import os
 import shutil
 import sys
+from datetime import datetime
+
+from ..dominio.regras import nome_arquivo_folha, pasta_folhas_mes
 
 MODELO_FOLHA = os.path.join("recursos", "Modelo de folha de ponto - Exemplo.docx")
 MODELO_PLANILHA = os.path.join("recursos", "Planilha de professores - exemplo.xlsx")
@@ -44,18 +47,34 @@ class ArmazenamentoLocal:
         os.makedirs(pasta, exist_ok=True)
         return pasta
 
-    def arquivar_digitalizada(self, origem, competencia):
-        """Copia o arquivo para a pasta de arquivo do sistema (sem sobrescrever) e devolve o novo caminho,
-        para a folha continuar acessível mesmo que o original seja movido ou apagado."""
-        pasta = os.path.join(self.pasta_digitalizadas_raiz, self._pasta_mes(competencia))
+    def pasta_importacao(self):
+        """Área de espera: páginas já separadas, ainda não conferidas."""
+        pasta = os.path.join(self.pasta_dados, "importacao")
         os.makedirs(pasta, exist_ok=True)
-        base, ext = os.path.splitext(os.path.basename(origem))
-        destino, n = os.path.join(pasta, base + ext), 1
-        while os.path.exists(destino):
-            destino = os.path.join(pasta, f"{base} ({n}){ext}")
-            n += 1
+        return pasta
+
+    def caminho_folha_arquivada(self, nome_servidor, competencia):
+        """Folhas_Digitalizadas/Folhas_AAAA-MM/Nome_do_Servidor-AAAA-MM.pdf"""
+        return os.path.join(self.pasta_digitalizadas_raiz, pasta_folhas_mes(competencia),
+                            nome_arquivo_folha(nome_servidor, competencia))
+
+    def arquivar_folha(self, origem, nome_servidor, competencia, momento=None):
+        """Grava a folha no destino padrão. Se já existir uma do mesmo servidor/mês, ela é renomeada para
+        `..._OLD_AAAAMMDD-HHMMSS.pdf` antes. Retorna (destino, backup ou None)."""
+        destino = self.caminho_folha_arquivada(nome_servidor, competencia)
+        if os.path.abspath(origem) == os.path.abspath(destino):
+            return destino, None
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        backup = None
+        if os.path.exists(destino):
+            carimbo = (momento or datetime.now()).strftime("%Y%m%d-%H%M%S")
+            base = destino[:-len(".pdf")] + f"_OLD_{carimbo}"
+            backup, n = base + ".pdf", 1
+            while os.path.exists(backup):  # duas substituições no mesmo segundo
+                backup, n = f"{base}_{n}.pdf", n + 1
+            os.replace(destino, backup)
         shutil.copy2(origem, destino)
-        return destino
+        return destino, backup
 
     def guardar_planilha_base(self, origem):
         os.makedirs(self.pasta_dados, exist_ok=True)

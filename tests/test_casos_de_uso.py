@@ -8,7 +8,7 @@ import openpyxl
 import pymupdf
 
 from folha_ponto.dominio.entidades import ConfiguracaoEmail, MetodoIdentificacao, StatusEnvio, TipoOperacao
-from folha_ponto.dominio.regras import MatriculaDuplicada, PlanilhaInvalida
+from folha_ponto.dominio.regras import ErroDominio, MatriculaDuplicada, PlanilhaInvalida
 from folha_ponto.infraestrutura.container import montar_servicos
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -143,7 +143,7 @@ class TestCasosDeUso(unittest.TestCase):
         doc.save(sem_texto)
         doc.close()
 
-        op_id, folhas = self.s.folhas_assinadas.importar_lote(pdfs[:2] + [sem_texto], self.COMP)
+        op_id, folhas = self.s.folhas_assinadas.importar_lote(pdfs[:2] + [sem_texto])
         self.assertEqual([f.metodo for f in folhas][:2], [MetodoIdentificacao.TEXTO] * 2)
         anonima = folhas[2]
         self.assertIsNone(anonima.servidor_id)
@@ -151,6 +151,10 @@ class TestCasosDeUso(unittest.TestCase):
         maria = self.s.servidores.listar("maria")[0]
         self.s.folhas_assinadas.atribuir(op_id, folhas, anonima, maria.id)
         self.assertEqual((anonima.servidor_id, anonima.metodo), (maria.id, MetodoIdentificacao.MANUAL))
+        self.assertEqual(anonima.competencia, "")
+        with self.assertRaises(ErroDominio):  # folha atribuída sem mês não pode ser arquivada
+            self.s.folhas_assinadas.concluir_conferencia(op_id, folhas)
+        self.s.folhas_assinadas.definir_competencia(op_id, folhas, anonima, self.COMP)
 
         ana = self.s.servidores.listar("ana")[0]
         antiga = self.s.folhas_assinadas.folha_do_servidor(folhas, ana.id)
@@ -158,7 +162,7 @@ class TestCasosDeUso(unittest.TestCase):
         self.assertIsNone(antiga.servidor_id)  # a folha anterior ficou sem dono
         self.assertEqual(nova.servidor_id, ana.id)
 
-        itens = self.s.folhas_assinadas.concluir_conferencia(op_id, folhas, self.COMP)
+        itens = self.s.folhas_assinadas.concluir_conferencia(op_id, folhas)
         self.assertEqual(len(itens), 3)
         assinadas = [f for f in self.s.consultas.folhas_arquivadas("", self.COMP) if f.assinada]
         self.assertEqual(len(assinadas), 3)
@@ -166,15 +170,96 @@ class TestCasosDeUso(unittest.TestCase):
         relatorio = self.s.envio.concluir_sem_envio(op_id, self.s.folhas_assinadas.itens_auditoria(itens, folhas))
         self.assertTrue(os.path.exists(relatorio))
         eventos = [e.descricao for e in self.s.auditoria.repositorio.eventos(op_id)]
-        self.assertTrue(any("atribuído manualmente" in e for e in eventos))
+        self.assertTrue(any("atribuída manualmente" in e for e in eventos))
         self.assertTrue(any("substituída manualmente" in e for e in eventos))
 
     def test_reimportar_mesmo_arquivo_reaproveita_registro(self):
         geracao = self.s.gerar_folhas.executar(self.COMP, self.planilha)
-        _, primeira = self.s.folhas_assinadas.importar_lote([geracao.itens[0].arquivo], self.COMP)
-        _, segunda = self.s.folhas_assinadas.importar_lote([geracao.itens[0].arquivo], self.COMP)
+        _, primeira = self.s.folhas_assinadas.importar_lote([geracao.itens[0].arquivo])
+        _, segunda = self.s.folhas_assinadas.importar_lote([geracao.itens[0].arquivo])
         self.assertTrue(segunda[0].duplicado)
         self.assertEqual(primeira[0].doc_id, segunda[0].doc_id)
+
+    def _pdf_folhas(self, nome, paginas):
+        """PDF de várias páginas, cada uma com (servidor, matrícula, mês) — como um lote digitalizado."""
+        caminho = os.path.join(self.pasta, nome)
+        doc = pymupdf.open()
+        for servidor, matricula, mes in paginas:
+            doc.new_page().insert_text((50, 72), f"NOME DO SERVIDOR: {servidor}\nMATRICULA: {matricula}\n"
+                                                 f"REFERENCIA: {mes}")
+        doc.save(caminho)
+        doc.close()
+        return caminho
+
+    def test_pdf_com_varias_folhas_e_meses_diferentes(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        pdf = self._pdf_folhas("lote.pdf", [("Ana Beatriz Oliveira", "17289104", "SETEMBRO/2026"),
+                                            ("Carlos Eduardo Santos", "17289105", "AGOSTO/2026"),
+                                            ("Ana Beatriz Oliveira", "17289104", "AGOSTO/2026")])
+        op_id, folhas = self.s.folhas_assinadas.importar_lote([pdf])
+        self.assertEqual([(f.pagina, f.competencia) for f in folhas],
+                         [(1, "SETEMBRO/2026"), (2, "AGOSTO/2026"), (3, "AGOSTO/2026")])
+        self.assertTrue(all(f.servidor_id for f in folhas))
+        self.s.folhas_assinadas.concluir_conferencia(op_id, folhas)
+        raiz = self.s.armazenamento.pasta_digitalizadas_raiz
+        self.assertEqual(sorted(os.listdir(os.path.join(raiz, "Folhas_2026-08"))),
+                         ["Ana_Beatriz_Oliveira-2026-08.pdf", "Carlos_Eduardo_Santos-2026-08.pdf"])
+        self.assertEqual(os.listdir(os.path.join(raiz, "Folhas_2026-09")), ["Ana_Beatriz_Oliveira-2026-09.pdf"])
+        self.assertEqual(self.s.auditoria.listar()[0].competencia, "VÁRIOS MESES")
+
+    def test_duplicidade_no_mesmo_pdf_vai_para_conferencia(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        pdf = self._pdf_folhas("dup.pdf", [("Ana Beatriz Oliveira", "17289104", self.COMP),
+                                           ("Ana Beatriz Oliveira", "17289104", self.COMP)])
+        # conteúdos idênticos geram o mesmo hash: força páginas diferentes
+        doc = pymupdf.open(pdf)
+        doc[1].insert_text((50, 200), "segunda via")
+        doc.saveIncr()
+        doc.close()
+        op_id, folhas = self.s.folhas_assinadas.importar_lote([pdf])
+        self.assertEqual(len(folhas), 2)
+        self.assertIsNotNone(folhas[0].servidor_id)
+        self.assertIsNone(folhas[1].servidor_id)
+        self.assertIn("Duplicada", folhas[1].observacao)
+        # o usuário prefere a segunda via
+        ana = self.s.servidores.listar("ana")[0]
+        self.s.folhas_assinadas.atribuir(op_id, folhas, folhas[1], ana.id)
+        self.assertIsNone(folhas[0].servidor_id)
+        self.s.folhas_assinadas.concluir_conferencia(op_id, folhas)
+
+    def test_nova_versao_preserva_backup_old(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        v1 = self._pdf_folhas("v1.pdf", [("Ana Beatriz Oliveira", "17289104", self.COMP)])
+        op_id, folhas = self.s.folhas_assinadas.importar_lote([v1])
+        self.s.folhas_assinadas.concluir_conferencia(op_id, folhas)
+        v2 = self._pdf_folhas("v2.pdf", [("Ana Beatriz Oliveira", "17289104", self.COMP)])
+        doc = pymupdf.open(v2)
+        doc[0].insert_text((50, 200), "versão revisada")
+        doc.saveIncr()
+        doc.close()
+        op_id, folhas = self.s.folhas_assinadas.importar_lote([v2])
+        self.assertIn("Substitui", folhas[0].observacao)
+        self.s.folhas_assinadas.concluir_conferencia(op_id, folhas)
+        pasta = os.path.join(self.s.armazenamento.pasta_digitalizadas_raiz, "Folhas_2026-02")
+        arquivos = sorted(os.listdir(pasta))
+        self.assertEqual(len(arquivos), 2)
+        self.assertIn("Ana_Beatriz_Oliveira-2026-02.pdf", arquivos)
+        antigo = next(a for a in arquivos if "_OLD_" in a)
+        self.assertRegex(antigo, r"^Ana_Beatriz_Oliveira-2026-02_OLD_\d{8}-\d{6}\.pdf$")
+        vigentes = [f for f in self.s.consultas.folhas_arquivadas("", self.COMP) if f.assinada]
+        self.assertEqual(len(vigentes), 1)
+
+    def test_aceita_somente_pdf(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        imagem = os.path.join(self.pasta, "foto.jpg")
+        with open(imagem, "wb") as f:
+            f.write(b"\xff\xd8\xff")
+        falso_pdf = os.path.join(self.pasta, "falso.pdf")
+        with open(falso_pdf, "wb") as f:
+            f.write(b"\xff\xd8\xff")
+        for caminho in (imagem, falso_pdf):
+            with self.assertRaises(ErroDominio):
+                self.s.folhas_assinadas.importar_lote([caminho])
 
     def test_configuracao_email(self):
         cfg = ConfiguracaoEmail(metodo="Outlook", host="h", porta="465", usuario="u", senha="p", usar_tls=False)

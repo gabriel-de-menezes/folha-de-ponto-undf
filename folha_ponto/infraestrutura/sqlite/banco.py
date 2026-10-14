@@ -91,6 +91,7 @@ COLUNAS_NOVAS = [
     ("folhas_digitalizadas", "metodo_identificacao", "TEXT"),
     ("logs_envio", "anexo", "TEXT"),
     ("logs_envio", "operacao_id", "INTEGER"),
+    ("operacao_itens", "competencia", "TEXT"),
 ]
 
 

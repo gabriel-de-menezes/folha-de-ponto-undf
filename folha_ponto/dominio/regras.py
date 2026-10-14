@@ -3,7 +3,7 @@ import re
 import unicodedata
 from datetime import datetime
 
-from .competencia import normalizar_competencia, rotulo_competencia
+from .competencia import competencia_iso, normalizar_competencia, rotulo_competencia
 from .entidades import TipoOperacao
 
 
@@ -58,15 +58,18 @@ def identificar_servidor(texto, servidores):
 
 
 def resolver_conflitos(folhas):
-    """Se duas folhas do lote foram identificadas para o mesmo servidor, a segunda fica sem dono
-    para o usuário decidir na conferência."""
-    donos = set()
+    """Se duas folhas do lote são do mesmo servidor e do mesmo mês, a segunda fica sem dono
+    para o usuário decidir na conferência qual delas manter."""
+    donos = {}
     for f in folhas:
-        if f.servidor_id in donos:
+        if not f.servidor_id:
+            continue
+        chave = (f.servidor_id, f.competencia)
+        if chave in donos:
             f.servidor_id = None
-            f.observacao = "Servidor já tem outra folha neste lote"
-        elif f.servidor_id:
-            donos.add(f.servidor_id)
+            f.observacao = f"Duplicada: mesmo servidor e mês de “{donos[chave].original}” (pág. {donos[chave].pagina})"
+        else:
+            donos[chave] = f
     return folhas
 
 
@@ -88,6 +91,22 @@ def mascarar_cpf(cpf):
     if len(digitos) != 11:
         return cpf or "—"
     return f"{digitos[:3]}.***.***-{digitos[9:]}"
+
+
+def nome_servidor_arquivo(nome):
+    """"MARIA  da Silva-Sántos" -> "Maria_Da_Silva_Santos": sem acentos, espaços duplos nem caracteres especiais."""
+    limpo = re.sub(r"[^A-Za-z0-9]+", " ", sem_acento(nome)).strip()
+    return "_".join(p.capitalize() for p in limpo.split()) or "Servidor"
+
+
+def nome_arquivo_folha(nome, competencia):
+    """Nome padrão da folha arquivada: Nome_do_Servidor-AAAA-MM.pdf."""
+    return f"{nome_servidor_arquivo(nome)}-{competencia_iso(competencia)}.pdf"
+
+
+def pasta_folhas_mes(competencia):
+    """Pasta do mês de referência: Folhas_AAAA-MM."""
+    return f"Folhas_{competencia_iso(competencia) or 'SEM_COMPETENCIA'}"
 
 
 def nome_arquivo_seguro(texto):

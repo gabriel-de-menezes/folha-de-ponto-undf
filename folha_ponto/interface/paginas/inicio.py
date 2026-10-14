@@ -33,8 +33,8 @@ class PaginaInicio(Pagina):
                            "Escolha o mês e a planilha de servidores. O sistema gera a folha de cada servidor para "
                            "você conferir e enviar por e-mail.", lambda: app.iniciar_fluxo("fluxo_gerar"))
         self._cartao_fluxo(grade, 1, "✍", "Enviar folhas assinadas",
-                           f"Escolha o mês e importe até {LIMITE_ARQUIVOS} folhas assinadas (PDF ou imagem). O sistema "
-                           "identifica de quem é cada folha para você conferir e enviar por e-mail.",
+                           f"Importe até {LIMITE_ARQUIVOS} PDFs com folhas assinadas, de um ou mais meses. O sistema "
+                           "identifica o servidor e o mês de cada folha para você conferir, arquivar e enviar por e-mail.",
                            lambda: app.iniciar_fluxo("fluxo_assinadas"))
 
         cab = ctk.CTkFrame(self, fg_color="transparent")
