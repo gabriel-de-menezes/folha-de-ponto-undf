@@ -36,18 +36,44 @@ def _mapear_colunas(cabecalho):
     return mapa
 
 
-def _linhas(caminho):
+EXTENSOES = (".xls", ".xlsx")
+OBRIGATORIAS = {"nome": "Nome", "matricula": "Matrícula", "cpf": "CPF", "email": "E-mail",
+                "carga_horaria": "Carga Horária", "acumula_cargo": "Acumula cargo (Sim/Não)"}
+
+
+def _ler_linhas(caminho):
+    if caminho.lower().endswith(".xls"):
+        try:
+            import xlrd
+        except ImportError:
+            raise PlanilhaInvalida("Para ler arquivos .xls é preciso o componente xlrd. "
+                                   "Salve a planilha como .xlsx e tente novamente.")
+        livro = xlrd.open_workbook(caminho)
+        aba = livro.sheet_by_index(0)
+        return [tuple(c.value if c.ctype != xlrd.XL_CELL_EMPTY else None for c in aba.row(i)) for i in range(aba.nrows)]
+    wb = openpyxl.load_workbook(caminho, data_only=True, read_only=True)
     try:
-        wb = openpyxl.load_workbook(caminho, data_only=True, read_only=True)
-        linhas = list(wb.active.iter_rows(values_only=True))
+        return list(wb.active.iter_rows(values_only=True))
+    finally:
         wb.close()
+
+
+def _linhas(caminho):
+    if not caminho.lower().endswith(EXTENSOES):
+        raise PlanilhaInvalida("Formato não aceito. Envie uma planilha Excel com extensão .xlsx ou .xls.")
+    try:
+        linhas = _ler_linhas(caminho)
+    except PlanilhaInvalida:
+        raise
     except Exception as e:
         raise PlanilhaInvalida(f"Não foi possível ler a planilha: {e}")
     if not linhas:
         raise PlanilhaInvalida("Planilha vazia.")
     mapa = _mapear_colunas([str(c).strip().lower() if c is not None else "" for c in linhas[0]])
-    if "nome" not in mapa or "matricula" not in mapa:
-        raise PlanilhaInvalida("A planilha precisa ter as colunas “Nome” e “Matrícula” na primeira linha.")
+    faltando = [rotulo for chave, rotulo in OBRIGATORIAS.items() if chave not in mapa]
+    if faltando:
+        raise PlanilhaInvalida("A primeira linha da planilha não está no padrão esperado. Colunas ausentes: "
+                               + ", ".join(faltando) + ".\nUse o modelo disponível em “Baixar modelo da planilha”.")
     return linhas[1:], mapa
 
 
@@ -64,7 +90,7 @@ class LeitorPlanilhaExcel:
     def ler(self, caminho):
         """-> (registros, ignoradas). Cada registro traz só os campos presentes na planilha."""
         linhas, mapa = _linhas(caminho)
-        registros, ignoradas = [], []
+        registros, ignoradas, vistas = [], [], set()
         for n, linha in enumerate(linhas, start=2):
             nome, matricula = _valor(linha, mapa, "nome"), _valor(linha, mapa, "matricula")
             if not nome and not matricula:
@@ -72,6 +98,10 @@ class LeitorPlanilhaExcel:
             if not nome or not matricula:
                 ignoradas.append(f"linha {n} (sem {'nome' if not nome else 'matrícula'})")
                 continue
+            if matricula in vistas:
+                ignoradas.append(f"linha {n} (matrícula {matricula} duplicada na planilha)")
+                continue
+            vistas.add(matricula)
             acumula = _valor(linha, mapa, "acumula_cargo").lower() in ("sim", "s", "true", "1", "x")
             dados = {"nome": nome, "matricula": matricula, "cpf": _valor(linha, mapa, "cpf"),
                      "email": _valor(linha, mapa, "email"), "carga_horaria": _valor(linha, mapa, "carga_horaria"),

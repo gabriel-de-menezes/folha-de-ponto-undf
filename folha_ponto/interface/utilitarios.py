@@ -9,7 +9,7 @@ import pymupdf
 from PIL import Image, ImageOps
 
 TIPOS_FOLHA_PDF = [("Arquivos PDF", "*.pdf")]
-TIPOS_PLANILHA = [("Planilhas Excel", "*.xlsx *.xlsm")]
+TIPOS_PLANILHA = [("Planilhas Excel (.xlsx, .xls)", "*.xlsx *.xls")]
 
 
 def abrir_arquivo(caminho):

@@ -92,6 +92,7 @@ COLUNAS_NOVAS = [
     ("logs_envio", "anexo", "TEXT"),
     ("logs_envio", "operacao_id", "INTEGER"),
     ("operacao_itens", "competencia", "TEXT"),
+    ("servidores", "ativo", "INTEGER DEFAULT 1"),
 ]
 
 

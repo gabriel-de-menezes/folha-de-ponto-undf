@@ -1,3 +1,4 @@
+import os
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
@@ -34,8 +35,12 @@ class PaginaServidores(Pagina):
         self.btn_base = T.botao_primario(base, "Definir planilha base…", self.definir_base)
         self.btn_base.pack(side="right", padx=20)
 
-        self.busca = T.entrada(self, placeholder_text="Buscar por nome, matrícula, CPF ou e-mail…")
-        self.busca.pack(fill="x", pady=(0, 12))
+        barra = ctk.CTkFrame(self, fg_color="transparent")
+        barra.pack(fill="x", pady=(0, 12))
+        T.botao_secundario(barra, "Remover selecionado", self.remover, width=170).pack(side="right")
+        T.botao_primario(barra, "＋ Novo servidor", lambda: DialogoServidor(app, None), width=160).pack(side="right", padx=8)
+        self.busca = T.entrada(barra, placeholder_text="Buscar por nome, CPF ou matrícula…")
+        self.busca.pack(side="left", fill="x", expand=True)
         self.busca.bind("<KeyRelease>", lambda e: self.atualizar())
         self.tabela = Tabela(self, app, [
             ("nome", "Nome", 260), ("matricula", "Matrícula", 110, "center"), ("cpf", "CPF", 120, "center"),
@@ -43,7 +48,8 @@ class PaginaServidores(Pagina):
             ("acumula", "Acumula cargo", 110, "center"),
         ], altura=10, ao_duplo_clique=lambda i: DialogoServidor(app, int(i)),
             menu=lambda i: [("Editar dados…", lambda x: DialogoServidor(app, int(x))),
-                            ("Ver folhas no Arquivo", self._ver_no_arquivo)])
+                            ("Ver folhas no Arquivo", self._ver_no_arquivo),
+                            ("Remover servidor…", lambda x: self.remover(int(x)))])
         self.tabela.pack(fill="both", expand=True)
 
     def definir_base(self):
@@ -51,11 +57,39 @@ class PaginaServidores(Pagina):
         if not caminho:
             return
         try:
-            resultado = self.servicos.servidores.definir_planilha_base(caminho)
+            resumo = self.servicos.servidores.analisar_planilha(caminho)
+        except ErroDominio as e:
+            messagebox.showwarning("Planilha rejeitada", str(e))
+            return
+        detalhes = f"\n\nIgnorados:\n• " + "\n• ".join(resumo.ignoradas[:8]) if resumo.ignoradas else ""
+        if not messagebox.askyesno(
+                "Confirmar importação",
+                f"Resumo da planilha “{os.path.basename(caminho)}”:\n\n"
+                f"• {resumo.novos} novo(s) servidor(es) a cadastrar\n"
+                f"• {resumo.atualizados} a atualizar\n"
+                f"• {resumo.sem_alteracao} sem alteração\n"
+                f"• {len(resumo.ignoradas)} ignorado(s) (linhas incompletas ou matrícula duplicada)"
+                f"{detalhes}\n\nConfirmar a gravação e definir como planilha base?"):
+            return
+        try:
+            resultado = self.servicos.servidores.definir_planilha_base(caminho, resumo)
         except ErroDominio as e:
             messagebox.showwarning("Planilha base", str(e))
             return
         self.app.notificar(f"Planilha base definida. {resultado.mensagem}")
+        self.atualizar()
+
+    def remover(self, iid=None):
+        iid = iid or self.tabela.selecionado()
+        servidor = self.servicos.servidores.obter(int(iid)) if iid else None
+        if not servidor:
+            messagebox.showinfo("Remover servidor", "Selecione um servidor na lista.")
+            return
+        if not messagebox.askyesno("Remover servidor", f"Remover {servidor.nome} (matrícula {servidor.matricula})?\n\n"
+                                                       "As folhas e envios já registrados continuam no arquivo e no histórico."):
+            return
+        self.servicos.servidores.remover(servidor.id)
+        self.app.notificar(f"{servidor.nome} removido.")
         self.atualizar()
 
     def _ver_no_arquivo(self, iid):
@@ -77,4 +111,4 @@ class PaginaServidores(Pagina):
         self.tabela.preencher(
             [(s.id, (s.nome, s.matricula, s.cpf, s.email or "⚠ sem e-mail", s.carga_horaria, s.acumula_cargo),
               None if s.tem_email else "aviso") for s in servidores],
-            "Nenhum servidor. Defina a planilha base acima." if not self.busca.get() else "Nenhum resultado para a busca.")
+            "Nenhum servidor. Defina a planilha base acima ou use “Novo servidor”." if not self.busca.get() else "Nenhum resultado para a busca.")

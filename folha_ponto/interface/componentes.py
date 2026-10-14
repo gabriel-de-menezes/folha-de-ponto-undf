@@ -7,6 +7,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from ..dominio.competencia import MESES, montar_competencia, separar_competencia
+from ..dominio.entidades import Servidor
 from ..dominio.regras import ErroDominio
 from . import tema as T
 from .utilitarios import abrir_arquivo, gerar_preview
@@ -274,11 +275,12 @@ class DialogoServidor(_Dialogo):
         super().__init__(app)
         self.app = app
         self.ao_salvar = ao_salvar
-        self.servidor = app.servicos.servidores.obter(servidor_id)
+        self.novo = servidor_id is None
+        self.servidor = Servidor(nome="", matricula="") if self.novo else app.servicos.servidores.obter(servidor_id)
         if not self.servidor:
             self.destroy()
             return
-        self.title(f"Editar servidor — {self.servidor.nome}")
+        self.title("Novo servidor" if self.novo else f"Editar servidor — {self.servidor.nome}")
         self.geometry("520x660")
         self.resizable(False, True)
         self.transient(app)
@@ -302,7 +304,7 @@ class DialogoServidor(_Dialogo):
 
         rodape = ctk.CTkFrame(self, fg_color="transparent")
         rodape.pack(fill="x", padx=16, pady=(0, 16))
-        T.botao_primario(rodape, "Salvar alterações", self.salvar).pack(side="right")
+        T.botao_primario(rodape, "Cadastrar servidor" if self.novo else "Salvar alterações", self.salvar).pack(side="right")
         T.botao_secundario(rodape, "Cancelar", self.destroy).pack(side="right", padx=8)
         self.bind("<Escape>", lambda e: self.destroy())
         self.after(150, self._focar)
@@ -317,7 +319,7 @@ class DialogoServidor(_Dialogo):
             messagebox.showwarning("Editar servidor", str(e), parent=self)
             return
         self.destroy()
-        self.app.notificar(f"Dados de {servidor.nome} atualizados.")
+        self.app.notificar(f"{servidor.nome} cadastrado." if self.novo else f"Dados de {servidor.nome} atualizados.")
         if self.ao_salvar:
             self.ao_salvar(servidor)
         self.app.atualizar_pagina()

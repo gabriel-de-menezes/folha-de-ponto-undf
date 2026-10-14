@@ -7,7 +7,7 @@ import unittest
 import openpyxl
 import pymupdf
 
-from folha_ponto.dominio.entidades import ConfiguracaoEmail, MetodoIdentificacao, StatusEnvio, TipoOperacao
+from folha_ponto.dominio.entidades import ConfiguracaoEmail, MetodoIdentificacao, Servidor, StatusEnvio, TipoOperacao
 from folha_ponto.dominio.regras import ErroDominio, MatriculaDuplicada, PlanilhaInvalida
 from folha_ponto.infraestrutura.container import montar_servicos
 
@@ -97,7 +97,8 @@ class TestCasosDeUso(unittest.TestCase):
         self.assertEqual(carlos.matricula, "17289105")          # número do Excel sem ".0"
         self.assertEqual(self.s.servidores.listar("tecnico"), [])  # busca não olha o cargo
         self.assertEqual(self.s.servidores.planilha_base().quantidade, 3)
-        self.assertEqual(self.s.servidores.importar_planilha(self.planilha).atualizados, 3)
+        repetida = self.s.servidores.importar_planilha(self.planilha)  # nada mudou
+        self.assertEqual((repetida.novos, repetida.atualizados, len(repetida.ids)), (0, 0, 3))
 
     def test_planilha_sem_colunas_obrigatorias(self):
         caminho = os.path.join(self.pasta, "ruim.xlsx")
@@ -106,6 +107,54 @@ class TestCasosDeUso(unittest.TestCase):
         wb.save(caminho)
         with self.assertRaises(PlanilhaInvalida):
             self.s.servidores.importar_planilha(caminho)
+
+    def test_resumo_previo_antes_de_gravar(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        nova = criar_planilha(os.path.join(self.pasta, "nova.xlsx"), [
+            ["Ana Beatriz Oliveira", "17289104", "444.555.666-04", "ana@teste.br", "40h", "Sim", "Técnico"],   # igual
+            ["Carlos Eduardo Santos", "17289105", "", "carlos.novo@teste.br", "20h", "Não", None],            # mudou
+            ["Daniela Rocha", "17289200", "", "dani@teste.br", "40h", "Não", None],                           # nova
+            ["Daniela Rocha Repetida", "17289200", "", "x@teste.br", "40h", "Não", None],                     # duplicada
+            [None, "999", None, None, None, None, None],                                                      # sem nome
+        ])
+        resumo = self.s.servidores.analisar_planilha(nova)
+        self.assertEqual((resumo.novos, resumo.atualizados, resumo.sem_alteracao, len(resumo.ignoradas)), (1, 1, 1, 2))
+        self.assertEqual(self.s.servidores.contar(), 3)  # nada gravado ainda
+        resultado = self.s.servidores.confirmar_importacao(resumo)
+        self.assertEqual((resultado.novos, resultado.atualizados), (1, 1))
+        self.assertEqual(self.s.servidores.contar(), 4)
+        self.assertEqual(self.s.servidores.listar("daniela")[0].nome, "Daniela Rocha")
+
+    def test_validacao_de_formato_e_cabecalho(self):
+        txt = os.path.join(self.pasta, "servidores.csv")
+        with open(txt, "w") as f:
+            f.write("Nome;Matrícula")
+        with self.assertRaises(PlanilhaInvalida) as e:
+            self.s.servidores.analisar_planilha(txt)
+        self.assertIn(".xlsx", str(e.exception))
+        incompleta = os.path.join(self.pasta, "incompleta.xlsx")
+        wb = openpyxl.Workbook()
+        wb.active.append(["Nome", "Matrícula", "E-mail"])
+        wb.active.append(["Ana", "1", "a@b.c"])
+        wb.save(incompleta)
+        with self.assertRaises(PlanilhaInvalida) as e:
+            self.s.servidores.analisar_planilha(incompleta)
+        self.assertIn("CPF", str(e.exception))
+        self.assertIn("Carga Horária", str(e.exception))
+
+    def test_inclusao_e_remocao_manual(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        novo = Servidor(nome="Zélia Manual", matricula="77770", cpf="111.222.333-44", email="z@teste.br")
+        self.s.servidores.salvar(novo)
+        self.assertEqual([s.nome for s in self.s.servidores.listar("77770")], ["Zélia Manual"])
+        self.assertEqual([s.nome for s in self.s.servidores.listar("111.222.333")], ["Zélia Manual"])
+        self.s.servidores.remover(novo.id)
+        self.assertEqual(self.s.servidores.listar("77770"), [])
+        self.assertEqual(self.s.servidores.contar(), 3)
+        self.assertEqual(self.s.servidores.obter(novo.id).nome, "Zélia Manual")  # histórico preservado
+        # a mesma matrícula pode ser cadastrada de novo: reativa o cadastro
+        self.s.servidores.salvar(Servidor(nome="Zélia Nova", matricula="77770"))
+        self.assertEqual(self.s.servidores.listar("77770")[0].nome, "Zélia Nova")
 
     def test_matricula_duplicada_na_edicao(self):
         self.s.servidores.importar_planilha(self.planilha)

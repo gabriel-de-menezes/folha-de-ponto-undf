@@ -40,8 +40,9 @@ class RepositorioServidoresSQLite(_Base):
         termo = f"%{(busca or '').strip()}%"
         return [_servidor(r) for r in self._todos("""
             SELECT * FROM servidores
-            WHERE SEM_ACENTO(nome) LIKE SEM_ACENTO(?) OR matricula LIKE ? OR IFNULL(cpf, '') LIKE ?
-               OR IFNULL(email, '') LIKE ?
+            WHERE IFNULL(ativo, 1) = 1
+              AND (SEM_ACENTO(nome) LIKE SEM_ACENTO(?) OR matricula LIKE ? OR IFNULL(cpf, '') LIKE ?
+                   OR IFNULL(email, '') LIKE ?)
             ORDER BY nome
         """, (termo, termo, termo, termo))]
 
@@ -49,7 +50,12 @@ class RepositorioServidoresSQLite(_Base):
         return _servidor(self._um("SELECT * FROM servidores WHERE id = ?", (servidor_id,)))
 
     def contar(self):
-        return self._um("SELECT COUNT(*) AS n FROM servidores")["n"]
+        return self._um("SELECT COUNT(*) AS n FROM servidores WHERE IFNULL(ativo, 1) = 1")["n"]
+
+    def remover(self, servidor_id):
+        """Remoção lógica: o servidor some das listas, mas folhas e envios já registrados mantêm o nome."""
+        with self._conexao() as conn:
+            conn.execute("UPDATE servidores SET ativo = 0 WHERE id = ?", (servidor_id,))
 
     def salvar(self, servidor):
         campos = Servidor.CAMPOS
@@ -57,6 +63,11 @@ class RepositorioServidoresSQLite(_Base):
             with self._conexao() as conn:
                 if servidor.id:
                     conn.execute(f"UPDATE servidores SET {', '.join(f'{c} = ?' for c in campos)} WHERE id = ?",
+                                 (*[getattr(servidor, c) for c in campos], servidor.id))
+                elif (antigo := conn.execute("SELECT id FROM servidores WHERE matricula = ? AND IFNULL(ativo, 1) = 0",
+                                             (servidor.matricula,)).fetchone()):
+                    servidor.id = antigo["id"]  # matrícula de um servidor removido: reativa o cadastro
+                    conn.execute(f"UPDATE servidores SET ativo = 1, {', '.join(f'{c} = ?' for c in campos)} WHERE id = ?",
                                  (*[getattr(servidor, c) for c in campos], servidor.id))
                 else:
                     cur = conn.execute(f"INSERT INTO servidores ({', '.join(campos)}) VALUES ({', '.join('?' * len(campos))})",
@@ -68,7 +79,9 @@ class RepositorioServidoresSQLite(_Base):
     def importar(self, dados):
         """Insere ou atualiza pela matrícula apenas os campos presentes em `dados`. -> (id, novo?)"""
         with self._conexao() as conn:
-            existente = conn.execute("SELECT id FROM servidores WHERE matricula = ?", (dados["matricula"],)).fetchone()
+            existente = conn.execute("SELECT id FROM servidores WHERE matricula = ? AND IFNULL(ativo, 1) = 1",
+                                     (dados["matricula"],)).fetchone()
+            dados = {**dados, "ativo": 1}  # reimportar um servidor removido o reativa
             colunas = list(dados)
             atualizar = ", ".join(f"{c} = excluded.{c}" for c in colunas if c != "matricula")
             conn.execute(f"""
