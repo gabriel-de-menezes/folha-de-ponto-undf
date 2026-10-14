@@ -227,12 +227,32 @@ class RepositorioEnviosSQLite(_Base):
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (servidor_id, competencia, destinatario, status, detalhes, anexo, operacao_id))
 
-    def listar(self):
-        rows = self._todos("SELECT l.*, s.nome FROM logs_envio l JOIN servidores s ON s.id = l.servidor_id ORDER BY l.id DESC")
+    def listar(self, busca="", status=""):
+        """Histórico de envios, do mais recente para o mais antigo. `busca` filtra por nome, CPF ou matrícula."""
+        termo = (busca or "").strip()
+        digitos = "".join(c for c in termo if c.isdigit())
+        rows = self._todos("""
+            SELECT l.*, s.nome, s.matricula, s.cpf FROM logs_envio l JOIN servidores s ON s.id = l.servidor_id
+            WHERE (:termo = '' OR SEM_ACENTO(s.nome) LIKE SEM_ACENTO(:like) OR s.matricula LIKE :like
+                   OR (:digitos <> '' AND REPLACE(REPLACE(IFNULL(s.cpf, ''), '.', ''), '-', '') LIKE :dig)
+                   OR IFNULL(s.cpf, '') LIKE :like)
+              AND (:status = '' OR l.status = :status)
+            ORDER BY l.id DESC
+        """, {"termo": termo, "like": f"%{termo}%", "digitos": digitos, "dig": f"%{digitos}%", "status": status or ""})
         return [RegistroEnvio(id=r["id"], servidor_id=r["servidor_id"], nome=r["nome"], competencia=r["competencia"],
                               destinatario=r["destinatario"], status=r["status"], detalhes=r["detalhes_erro"] or "",
-                              anexo=r["anexo"], enviado_em=utc_para_local(r["enviado_em"]), operacao_id=r["operacao_id"])
+                              anexo=r["anexo"], enviado_em=utc_para_local(r["enviado_em"]), operacao_id=r["operacao_id"],
+                              matricula=r["matricula"] or "", cpf=r["cpf"] or "")
                 for r in rows]
+
+    def situacao_por_servidor_mes(self):
+        """{(servidor_id, competencia): "Enviado" | "Erro"} — Enviado se algum envio deu certo, senão Erro."""
+        situacao = {}
+        for r in self._todos("SELECT servidor_id, competencia, status FROM logs_envio ORDER BY id"):
+            chave = (r["servidor_id"], r["competencia"])
+            if situacao.get(chave) != "Enviado":
+                situacao[chave] = r["status"]
+        return situacao
 
 
 class RepositorioConfiguracoesSQLite(_Base):

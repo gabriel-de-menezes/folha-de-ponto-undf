@@ -131,15 +131,22 @@ class EtapaEnvio(ctk.CTkFrame):
         T.link(barra, "alterar", lambda: self.app.mostrar("config")).pack(side="right")
         self.lbl_metodo = ctk.CTkLabel(barra, text="", font=T.fonte(12), text_color=T.SUAVE)
         self.lbl_metodo.pack(side="right")
+        grupos = ctk.CTkFrame(self, fg_color="transparent")
+        grupos.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(grupos, text="Selecionar:", font=T.fonte(12), text_color=T.SUAVE).pack(side="left", padx=(0, 8))
+        for rotulo, grupo in (("Todos", "todos"), ("Pendentes de envio", "pendentes"),
+                              ("Com erro no envio anterior", "erros"), ("Nenhum", "nenhum")):
+            T.botao_secundario(grupos, rotulo, lambda g=grupo: self._selecionar_grupo(g), width=190 if grupo == "erros" else 140,
+                               height=30).pack(side="left", padx=(0, 6))
         self.tabela = Tabela(self, self.app, [
             ("nome", "Servidor", 230), ("matricula", "Matrícula", 90, "center"), ("email", "E-mail", 230),
-            ("mes", "Mês", 110, "center"), ("folha", "Folha em anexo", 190), ("acumula", "Acumula", 70, "center"),
+            ("mes", "Mês", 100, "center"), ("folha", "Folha em anexo", 170), ("situacao", "Situação", 110, "center"),
         ], altura=8, checkbox=True, ao_marcar=self.atualizar_rotulos, ao_duplo_clique=self._abrir_folha, menu=self._menu)
         self.tabela.pack(fill="both", expand=True)
         ctk.CTkLabel(self, text="Clique na caixa ☐ para marcar ou desmarcar · clique no ☐ do cabeçalho para todos · "
                                 "dois cliques abrem a folha · servidores sem e-mail aparecem com —",
                      font=T.fonte(12), text_color=T.SUAVE).pack(anchor="w", pady=(6, 0))
-        self._itens = {}
+        self._itens, self._situacao = {}, {}
 
     def mostrar(self):
         f = self.fluxo
@@ -151,12 +158,28 @@ class EtapaEnvio(ctk.CTkFrame):
         self._itens = {f"{i.servidor_id}|{i.competencia}": i for i in f.itens if i.servidor_id and i.arquivo}
         bloqueados = {k for k, i in self._itens.items() if not i.tem_email}
         marcados = {k for k, i in self._itens.items() if i.selecionado} - bloqueados
+        situacoes = self.app.servicos.envio.situacoes(list(self._itens.values()), f.competencia)
+        self._situacao = {k: situacoes[id(i)] for k, i in self._itens.items()}
+        rotulos = {"Enviado": "✓ Enviado", "Erro": "✕ Erro anterior", "Pendente": "Pendente"}
         linhas = [(k, (i.nome, i.matricula, i.email or "⚠ sem e-mail cadastrado", rotulo_competencia(i.competencia or f.competencia),
-                          os.path.basename(i.arquivo), i.acumula or ""),
-                   "aviso" if k in bloqueados else None)
+                          os.path.basename(i.arquivo), rotulos[self._situacao[k]]),
+                   "aviso" if k in bloqueados else ("erro" if self._situacao[k] == "Erro" else
+                                                    ("ok" if self._situacao[k] == "Enviado" else None)))
                   for k, i in sorted(self._itens.items(), key=lambda kv: kv[1].nome)]
         self.tabela.preencher(linhas, "Nenhuma folha disponível para envio.", marcados=marcados, bloqueados=bloqueados)
         self.atualizar_rotulos()
+
+    def _selecionar_grupo(self, grupo):
+        """Marca em bloco: todos, pendentes (sem envio com sucesso), com erro no envio anterior ou nenhum."""
+        if grupo == "nenhum":
+            self.tabela.definir_marcados(set())
+            return
+        escolhidos = {"todos": lambda k: True, "pendentes": lambda k: self._situacao[k] != "Enviado",
+                      "erros": lambda k: self._situacao[k] == "Erro"}[grupo]
+        marcar = {k for k in self._itens if k not in self.tabela.bloqueados and escolhidos(k)}
+        if not marcar:
+            self.app.notificar("Nenhum servidor neste grupo.")
+        self.tabela.definir_marcados(marcar)
 
     def _voltar(self):
         self._guardar_marcacoes()

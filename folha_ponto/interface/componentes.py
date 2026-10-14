@@ -124,6 +124,15 @@ class Tabela(ctk.CTkFrame):
         if self.ao_marcar:
             self.ao_marcar()
 
+    def definir_marcados(self, iids):
+        """Marca exatamente as linhas indicadas (ignora as bloqueadas)."""
+        self.marcados = {str(i) for i in iids} - self.bloqueados
+        for iid in self.iids():
+            self.tree.set(iid, "_sel", self._simbolo(iid))
+        self._atualizar_cabecalho()
+        if self.ao_marcar:
+            self.ao_marcar()
+
     def alternar_todos(self):
         elegiveis = set(self.iids()) - self.bloqueados
         self.marcados = set() if elegiveis and elegiveis <= self.marcados else elegiveis

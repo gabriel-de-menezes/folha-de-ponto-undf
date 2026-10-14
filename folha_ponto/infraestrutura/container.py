@@ -61,7 +61,7 @@ def montar_servicos(pasta_app=None, servico_email=None, gerador_folhas=None, lei
                                  armazenamento, auditoria, calendario),
         folhas_assinadas=FolhasAssinadas(repo_servidores, repo_folhas, leitor_folhas or LeitorFolhasTesseract(),
                                          armazenamento, auditoria),
-        envio=EnviarFolhas(servico_email, repo_envios, configuracoes, auditoria, ambiente),
+        envio=EnviarFolhas(servico_email, repo_envios, configuracoes, auditoria, ambiente, repo_servidores),
         auditoria=auditoria,
         configuracoes=configuracoes,
         consultas=Consultas(repo_folhas, repo_envios),

@@ -183,6 +183,31 @@ class TestCasosDeUso(unittest.TestCase):
         self.assertFalse(maria.selecionado)
         self.assertEqual(len(self.s.consultas.envios_realizados()), 2)
 
+    def test_grupos_de_envio_e_reenvio_de_erros(self):
+        r = self.s.gerar_folhas.executar(self.COMP, self.planilha)
+        itens = {i.nome: i for i in r.itens}
+        todos = self.s.envio.selecionar(r.itens, "todos", self.COMP)
+        self.assertEqual({i.nome for i in todos}, {"Ana Beatriz Oliveira", "Carlos Eduardo Santos"})  # Maria sem e-mail
+        self.s.envio.executar(r.op_id, self.COMP, TipoOperacao.GERACAO, todos, r.itens)
+        # Ana enviada, Carlos com erro (endereço recusado)
+        self.assertEqual([i.nome for i in self.s.envio.selecionar(r.itens, "erros", self.COMP)], ["Carlos Eduardo Santos"])
+        self.assertEqual([i.nome for i in self.s.envio.selecionar(r.itens, "pendentes", self.COMP)], ["Carlos Eduardo Santos"])
+        # histórico com busca por nome, matrícula e CPF
+        self.assertEqual(len(self.s.consultas.envios_realizados("carlos")), 1)
+        self.assertEqual(len(self.s.consultas.envios_realizados("17289104")), 1)
+        self.assertEqual(len(self.s.consultas.envios_realizados("44455566604")), 1)
+        self.assertEqual(len(self.s.consultas.envios_realizados("", "Erro")), 1)
+        # o e-mail é corrigido e os erros são reenviados
+        carlos = self.s.servidores.listar("carlos")[0]
+        carlos.email = "carlos@certo.br"
+        self.s.servidores.salvar(carlos)
+        op_id, resultado = self.s.envio.reenviar_erros(self.s.consultas.envios_realizados("", "Erro"))
+        self.assertEqual((resultado.enviados, resultado.total), (1, 1))
+        self.assertIn(("carlos@certo.br", "Folha_17289105.pdf"), self.email.enviados)
+        self.assertEqual(self.s.auditoria.repositorio.obter(op_id).tipo, TipoOperacao.REENVIO)
+        with self.assertRaises(ErroDominio):  # nada mais com erro pendente
+            self.s.envio.reenviar_erros(self.s.consultas.envios_realizados("", "Erro"))
+
     def test_fluxo_assinadas_com_conferencia(self):
         geracao = self.s.gerar_folhas.executar(self.COMP, self.planilha)
         pdfs = [i.arquivo for i in geracao.itens]

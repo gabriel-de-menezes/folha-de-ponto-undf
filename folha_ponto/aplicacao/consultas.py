@@ -17,5 +17,6 @@ class Consultas:
             return (ano or 0, mes or 0)
         return sorted(set(self.folhas.competencias()), key=chave, reverse=True)
 
-    def envios_realizados(self):
-        return self.envios.listar()
+    def envios_realizados(self, busca="", status=""):
+        """Histórico de envios (nome, CPF ou matrícula; status "Enviado"/"Erro")."""
+        return self.envios.listar(busca, status)

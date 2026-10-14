@@ -48,7 +48,7 @@ class PaginaConfiguracoes(Pagina):
         ctk.CTkLabel(f, text="Gmail: smtp.gmail.com · porta 587 · STARTTLS · usuário = seu e-mail · senha = senha de app "
                              "(Conta Google → Segurança → Verificação em duas etapas → Senhas de app).\n"
                              "Office 365 / Outlook.com: smtp.office365.com · porta 587 · STARTTLS.\n"
-                             "Servidor institucional: peça host, porta e credenciais à equipe de TI.",
+                             "Servidor institucional (ex.: conta digep@undf.edu.br): peça host, porta e credenciais à equipe de TI.",
                      font=T.fonte(12), text_color=T.SUAVE, justify="left", wraplength=820).grid(
             row=6, column=0, columnspan=2, padx=20, pady=(8, 0), sticky="w")
         self.frames["SMTP"] = f

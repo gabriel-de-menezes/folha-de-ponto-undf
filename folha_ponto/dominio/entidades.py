@@ -4,11 +4,13 @@ from dataclasses import dataclass
 
 class TipoOperacao:
     GERACAO = "GERACAO"      # gerar folhas a partir da planilha e enviar por e-mail
-    ASSINADAS = "ASSINADAS"  # importar folhas assinadas (PDF/imagem) e enviar por e-mail
+    ASSINADAS = "ASSINADAS"  # importar folhas assinadas (PDF) e enviar por e-mail
+    REENVIO = "REENVIO"      # reenviar e-mails que deram erro
 
     DESCRICAO = {
         GERACAO: "Geração e envio de folhas de ponto",
         ASSINADAS: "Importação e envio de folhas assinadas",
+        REENVIO: "Reenvio de e-mails com erro",
     }
 
     @classmethod
@@ -20,6 +22,7 @@ class StatusEnvio:
     ENVIADO = "Enviado"
     ERRO = "Erro"
     NAO_SELECIONADO = "Não selecionado"
+    PENDENTE = "Pendente"  # ainda não houve envio com sucesso (nem tentativa) para o servidor/mês
 
 
 class MetodoIdentificacao:
@@ -189,6 +192,8 @@ class RegistroEnvio:
     anexo: str | None
     enviado_em: str
     operacao_id: int | None
+    matricula: str = ""
+    cpf: str = ""
 
 
 @dataclass
