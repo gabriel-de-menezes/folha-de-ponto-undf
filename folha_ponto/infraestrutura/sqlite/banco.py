@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS operacao_eventos (
     momento TEXT NOT NULL,
     descricao TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS datas_especiais (
+    data TEXT PRIMARY KEY,               -- AAAA-MM-DD
+    especificacao TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS configuracoes (
     chave TEXT PRIMARY KEY,
     valor TEXT

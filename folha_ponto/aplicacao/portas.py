@@ -70,8 +70,8 @@ class LeitorPlanilha(Protocol):
 
 
 class GeradorFolhas(Protocol):
-    def gerar_lote(self, servidores: list[Servidor], competencia: str, progresso: Progresso
-                   ) -> tuple[dict[int, tuple[str, str | None]], list[str]]: ...
+    def gerar_lote(self, servidores: list[Servidor], competencia: str, progresso: Progresso,
+                   datas_especiais: dict[int, str] | None = None) -> tuple[dict[int, tuple[str, str | None]], list[str]]: ...
     # -> ({servidor_id: (caminho_docx, caminho_pdf ou None)}, erros)
 
 

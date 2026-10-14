@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 
 from ..aplicacao.auditoria import ServicoAuditoria
+from ..aplicacao.calendario import ServicoCalendario
 from ..aplicacao.configuracoes import ServicoConfiguracoes
 from ..aplicacao.consultas import Consultas
 from ..aplicacao.envio import EnviarFolhas
@@ -13,11 +14,11 @@ from .armazenamento import ArmazenamentoLocal
 from .envio_email import ServicoEmailPadrao
 from .folha_docx import GeradorFolhasDocx
 from .leitor_folhas import LeitorFolhasTesseract
-from .planilha_excel import LeitorPlanilhaExcel
+from .planilha_excel import LeitorCalendarioExcel, LeitorPlanilhaExcel
 from .relatorio_pdf import GeradorRelatorioPDF
 from .sqlite.banco import Banco
 from .sqlite.repositorios import (
-    RepositorioConfiguracoesSQLite, RepositorioEnviosSQLite, RepositorioFolhasSQLite, RepositorioOperacoesSQLite,
+    RepositorioCalendarioSQLite, RepositorioConfiguracoesSQLite, RepositorioEnviosSQLite, RepositorioFolhasSQLite, RepositorioOperacoesSQLite,
     RepositorioServidoresSQLite,
 )
 
@@ -32,6 +33,7 @@ class Servicos:
     auditoria: ServicoAuditoria
     configuracoes: ServicoConfiguracoes
     consultas: Consultas
+    calendario: ServicoCalendario
     armazenamento: ArmazenamentoLocal
 
 
@@ -47,6 +49,7 @@ def montar_servicos(pasta_app=None, servico_email=None, gerador_folhas=None, lei
     repo_operacoes = RepositorioOperacoesSQLite(banco)
     repo_envios = RepositorioEnviosSQLite(banco)
     repo_config = RepositorioConfiguracoesSQLite(banco)
+    calendario = ServicoCalendario(RepositorioCalendarioSQLite(banco), LeitorCalendarioExcel())
     servico_email = servico_email or ServicoEmailPadrao()
 
     auditoria = ServicoAuditoria(repo_operacoes, GeradorRelatorioPDF(), armazenamento, ambiente)
@@ -55,12 +58,13 @@ def montar_servicos(pasta_app=None, servico_email=None, gerador_folhas=None, lei
     return Servicos(
         servidores=servidores,
         gerar_folhas=GerarFolhas(servidores, repo_folhas, gerador_folhas or GeradorFolhasDocx(armazenamento),
-                                 armazenamento, auditoria),
+                                 armazenamento, auditoria, calendario),
         folhas_assinadas=FolhasAssinadas(repo_servidores, repo_folhas, leitor_folhas or LeitorFolhasTesseract(),
                                          armazenamento, auditoria),
         envio=EnviarFolhas(servico_email, repo_envios, configuracoes, auditoria, ambiente),
         auditoria=auditoria,
         configuracoes=configuracoes,
         consultas=Consultas(repo_folhas, repo_envios),
+        calendario=calendario,
         armazenamento=armazenamento,
     )

@@ -13,10 +13,10 @@ MODELO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 
 class TestFolhaDocx(unittest.TestCase):
-    def preencher(self, competencia, **dados):
+    def preencher(self, competencia, especiais=None, **dados):
         destino = os.path.join(tempfile.mkdtemp(), "folha.docx")
         servidor = Servidor(nome="Patrícia Alves", matricula="17289110", carga_horaria="40h", **dados)
-        preencher_folha(MODELO, servidor, competencia, destino)
+        preencher_folha(MODELO, servidor, competencia, destino, especiais)
         return docx.Document(destino).tables[0]
 
     def test_cabecalho(self):
@@ -38,6 +38,18 @@ class TestFolhaDocx(unittest.TestCase):
         self.assertEqual(dias[7], "SÁBADO")
         self.assertEqual(dias[2], "")
         self.assertEqual(max(dias), 28)          # 29, 30 e 31 ficam em branco
+
+    def test_datas_especiais(self):
+        tabela = self.preencher("FEVEREIRO/2026", {16: "Carnaval - Ponto Facultativo", 17: "Recesso Acadêmico",
+                                                   14: "Feriado em sábado"})
+        dias = {int(c[0].text): c[1].text.strip() for c in (_celulas_unicas(r) for r in tabela.rows)
+                if len(c) == 7 and c[0].text.strip().isdigit()}
+        self.assertEqual(dias[16], "FACULTATIVO")
+        self.assertEqual(dias[17], "RECESSO")
+        self.assertEqual(dias[14], "SÁBADO")  # fim de semana mantém o rótulo; a nota vai em Observações
+        texto = "\n".join(c.text for r in tabela.rows for c in _celulas_unicas(r))
+        self.assertIn("Dia 16, Carnaval - Ponto Facultativo", texto)
+        self.assertIn("Dia 17, Recesso Acadêmico", texto)
 
 
 if __name__ == "__main__":

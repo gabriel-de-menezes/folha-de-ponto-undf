@@ -43,7 +43,7 @@ class GeradorFalso:
     def __init__(self, pasta):
         self.pasta = pasta
 
-    def gerar_lote(self, servidores, competencia, progresso):
+    def gerar_lote(self, servidores, competencia, progresso, datas_especiais=None):
         arquivos = {}
         for n, s in enumerate(servidores):
             progresso(n, len(servidores), s.nome)
@@ -309,6 +309,54 @@ class TestCasosDeUso(unittest.TestCase):
         for caminho in (imagem, falso_pdf):
             with self.assertRaises(ErroDominio):
                 self.s.folhas_assinadas.importar_lote([caminho])
+
+    def _planilha_calendario(self, nome, linhas, cabecalho=("Data", "Especificação")):
+        caminho = os.path.join(self.pasta, nome)
+        wb = openpyxl.Workbook()
+        wb.active.append(list(cabecalho))
+        for linha in linhas:
+            wb.active.append(list(linha))
+        wb.save(caminho)
+        return caminho
+
+    def test_calendario_importacao_com_resumo(self):
+        from datetime import date
+        plan = self._planilha_calendario("cal.xlsx", [
+            ("01/01/2027", "Feriado Nacional"), (date(2027, 7, 1), "Recesso Acadêmico"),
+            ("31/02/2027", "Data impossível"), ("01/01/2027", "Repetida"), ("02/01/2027", ""),
+        ])
+        resumo = self.s.calendario.analisar_planilha(plan)
+        self.assertEqual((resumo.novos, resumo.atualizados, len(resumo.ignoradas)), (2, 0, 3))
+        self.assertEqual(self.s.calendario.listar(), [])  # nada gravado antes de confirmar
+        self.s.calendario.confirmar_importacao(resumo)
+        self.assertEqual([(d.data_br, d.especificacao) for d in self.s.calendario.listar(2027)],
+                         [("01/01/2027", "Feriado Nacional"), ("01/07/2027", "Recesso Acadêmico")])
+        nova = self._planilha_calendario("cal2.xlsx", [("01/01/2027", "Confraternização Universal"),
+                                                       ("01/07/2027", "Recesso Acadêmico")])
+        r2 = self.s.calendario.analisar_planilha(nova)
+        self.assertEqual((r2.novos, r2.atualizados, r2.sem_alteracao), (0, 1, 1))
+
+    def test_calendario_cabecalho_e_formato(self):
+        ruim = self._planilha_calendario("ruim.xlsx", [("01/01/2027", "x")], cabecalho=("Dia", "Nota"))
+        with self.assertRaises(PlanilhaInvalida):
+            self.s.calendario.analisar_planilha(ruim)
+        csv = os.path.join(self.pasta, "cal.csv")
+        with open(csv, "w") as f:
+            f.write("Data;Especificação")
+        with self.assertRaises(PlanilhaInvalida):
+            self.s.calendario.analisar_planilha(csv)
+
+    def test_calendario_manual(self):
+        from datetime import date
+        self.s.calendario.salvar(date(2026, 2, 16), "Ponto Facultativo")
+        self.s.calendario.salvar(date(2026, 2, 16), "Carnaval")  # altera a mesma data
+        self.assertEqual([d.especificacao for d in self.s.calendario.listar(2026)], ["Carnaval"])
+        self.assertEqual(self.s.calendario.do_mes("FEVEREIRO/2026"), {16: "Carnaval"})
+        self.assertEqual(self.s.calendario.do_mes("MARÇO/2026"), {})
+        with self.assertRaises(ErroDominio):
+            self.s.calendario.salvar(date(2026, 2, 17), "   ")
+        self.s.calendario.remover(date(2026, 2, 16))
+        self.assertEqual(self.s.calendario.listar(), [])
 
     def test_configuracao_email(self):
         cfg = ConfiguracaoEmail(metodo="Outlook", host="h", porta="465", usuario="u", senha="p", usar_tls=False)

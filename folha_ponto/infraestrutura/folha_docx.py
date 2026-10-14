@@ -4,6 +4,7 @@ import os
 
 import docx
 
+from ..dominio.calendario import rotulo_na_folha
 from ..dominio.competencia import separar_competencia
 from ..dominio.entidades import Servidor
 from ..dominio.regras import nome_arquivo_seguro
@@ -41,9 +42,10 @@ def _texto_celula(celula, texto, negrito=True):
     _escrever(celula.paragraphs[0], [(texto, negrito)])
 
 
-def _preencher_calendario(tabela, competencia):
-    """Reescreve a grade de dias ("01".."31") conforme o mês/ano: marca sábados/domingos e deixa em
-    branco os dias que não existem no mês (ex: 31/04, 30/02)."""
+def _preencher_calendario(tabela, competencia, especiais=None):
+    """Reescreve a grade de dias ("01".."31") conforme o mês/ano: marca sábados/domingos e datas especiais
+    (feriado, recesso, ponto facultativo) e deixa em branco os dias que não existem no mês (ex: 31/04, 30/02)."""
+    especiais = especiais or {}
     mes, ano = separar_competencia(competencia)
     if not mes:
         return
@@ -64,10 +66,27 @@ def _preencher_calendario(tabela, competencia):
                 valores = [f"{dia:02d} ", "SÁBADO ", "-- ", "-- ", "SÁBADO ", "-- ", "-- "]
             elif semana == 6:
                 valores = [f"{dia:02d} ", "DOMINGO ", "-- ", "-- ", "DOMINGO ", "-- ", "-- "]
+            elif dia in especiais:
+                rotulo_dia = rotulo_na_folha(especiais[dia])
+                valores = [f"{dia:02d} ", f"{rotulo_dia} ", "-- ", "-- ", f"{rotulo_dia} ", "-- ", "-- "]
             else:
                 valores = [f"{dia:02d} ", " ", " ", " ", " ", "", ""]
         for celula, valor in zip(celulas, valores):
             _texto_celula(celula, valor)
+
+
+def _preencher_observacoes(tabela, competencia, especiais):
+    """Escreve na linha seguinte a “Observações:” as datas especiais do mês (ex.: "Dia 7, Feriado Nacional")."""
+    if not especiais:
+        return
+    mes, _ = separar_competencia(competencia)
+    notas = "; ".join(f"Dia {dia}, {texto}" for dia, texto in sorted(especiais.items()))
+    linhas = list(tabela.rows)
+    for i, row in enumerate(linhas):
+        if "observa" in "".join(c.text for c in _celulas_unicas(row)).lower() and i + 1 < len(linhas):
+            celula = _celulas_unicas(linhas[i + 1])[0]
+            _texto_celula(celula, notas, negrito=False)
+            return
 
 
 def _campo(servidor, nome):
@@ -75,8 +94,9 @@ def _campo(servidor, nome):
     return (getattr(servidor, nome) or Servidor.__dataclass_fields__[nome].default or "").strip()
 
 
-def preencher_folha(modelo, servidor, competencia, destino):
-    """Preenche o cabeçalho (mantendo os rótulos em negrito) e o calendário do mês."""
+def preencher_folha(modelo, servidor, competencia, destino, datas_especiais=None):
+    """Preenche o cabeçalho (mantendo os rótulos em negrito) e o calendário do mês.
+    datas_especiais: {dia: especificação} dos feriados/recessos do mês."""
     documento = docx.Document(modelo)
     ua, cargo, padrao = _campo(servidor, "ua"), _campo(servidor, "cargo"), _campo(servidor, "padrao")
     funcao, exercicio = _campo(servidor, "funcao"), _campo(servidor, "exercicio")
@@ -99,7 +119,8 @@ def preencher_folha(modelo, servidor, competencia, destino):
                                       ("CARGA HORÁRIA:", True), (f"  {servidor.carga_horaria}", False)])
                     elif "EXERCÍCIO" in texto or "EXERCICIO" in texto:
                         _escrever(p, [("EXERCÍCIO", True), (f": {exercicio} ", False)])
-        _preencher_calendario(tabela, competencia)
+        _preencher_calendario(tabela, competencia, datas_especiais)
+        _preencher_observacoes(tabela, competencia, datas_especiais)
     os.makedirs(os.path.dirname(os.path.abspath(destino)), exist_ok=True)
     documento.save(destino)
     return destino
@@ -109,7 +130,7 @@ class GeradorFolhasDocx:
     def __init__(self, armazenamento):
         self.armazenamento = armazenamento
 
-    def gerar_lote(self, servidores, competencia, progresso):
+    def gerar_lote(self, servidores, competencia, progresso, datas_especiais=None):
         """-> ({servidor_id: (docx, pdf ou None)}, erros)"""
         pasta = self.armazenamento.pasta_geradas(competencia)
         arquivos, erros = {}, []
@@ -118,7 +139,7 @@ class GeradorFolhasDocx:
                 progresso(n, len(servidores), f"Gerando folha de {s.nome}")
                 base = os.path.join(pasta, f"Folha_{nome_arquivo_seguro(s.matricula)}_{nome_arquivo_seguro(s.nome)}")
                 try:
-                    preencher_folha(self.armazenamento.modelo_folha, s, competencia, base + ".docx")
+                    preencher_folha(self.armazenamento.modelo_folha, s, competencia, base + ".docx", datas_especiais)
                     pdf_ok = conversor.converter(base + ".docx", base + ".pdf")
                     arquivos[s.id] = (base + ".docx", base + ".pdf" if pdf_ok else None)
                 except Exception as e:

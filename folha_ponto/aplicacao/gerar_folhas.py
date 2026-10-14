@@ -17,7 +17,8 @@ class ResultadoGeracao:
 
 
 class GerarFolhas:
-    def __init__(self, servidores, repositorio_folhas, gerador, armazenamento, auditoria):
+    def __init__(self, servidores, repositorio_folhas, gerador, armazenamento, auditoria, calendario=None):
+        self.calendario = calendario
         self.servidores = servidores
         self.folhas = repositorio_folhas
         self.gerador = gerador
@@ -49,7 +50,11 @@ class GerarFolhas:
                               + (" Guardada como planilha base." if salvar_como_base else ""))
 
         servidores = [self.servidores.obter(i) for i in importacao.ids]
-        arquivos, erros = self.gerador.gerar_lote(servidores, competencia, progresso)
+        especiais = self.calendario.do_mes(competencia) if self.calendario else {}
+        if especiais:
+            self.auditoria.evento(op_id, f"Datas especiais inseridas nas folhas: {len(especiais)} em "
+                                         f"{rotulo_competencia(competencia)}.")
+        arquivos, erros = self.gerador.gerar_lote(servidores, competencia, progresso, especiais)
         resultado = ResultadoGeracao(op_id=op_id, erros=erros)
         for s in servidores:
             if s.id in arquivos:

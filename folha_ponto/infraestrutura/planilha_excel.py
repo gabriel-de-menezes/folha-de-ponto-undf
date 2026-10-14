@@ -1,7 +1,8 @@
 """Leitura da planilha de servidores (.xlsx)."""
 import openpyxl
 
-from ..dominio.regras import PlanilhaInvalida
+from ..dominio.calendario import interpretar_data
+from ..dominio.regras import PlanilhaInvalida, sem_acento
 
 # Campos do modelo da folha que só são atualizados se a planilha tiver a coluna
 CAMPOS_OPCIONAIS = ("ua", "cargo", "padrao", "funcao", "exercicio")
@@ -58,7 +59,8 @@ def _ler_linhas(caminho):
         wb.close()
 
 
-def _linhas(caminho):
+def _carregar(caminho):
+    """Valida a extensão e devolve todas as linhas da 1ª aba."""
     if not caminho.lower().endswith(EXTENSOES):
         raise PlanilhaInvalida("Formato não aceito. Envie uma planilha Excel com extensão .xlsx ou .xls.")
     try:
@@ -69,6 +71,11 @@ def _linhas(caminho):
         raise PlanilhaInvalida(f"Não foi possível ler a planilha: {e}")
     if not linhas:
         raise PlanilhaInvalida("Planilha vazia.")
+    return linhas
+
+
+def _linhas(caminho):
+    linhas = _carregar(caminho)
     mapa = _mapear_colunas([str(c).strip().lower() if c is not None else "" for c in linhas[0]])
     faltando = [rotulo for chave, rotulo in OBRIGATORIAS.items() if chave not in mapa]
     if faltando:
@@ -117,3 +124,35 @@ class LeitorPlanilhaExcel:
             return len(self.ler(caminho)[0])
         except PlanilhaInvalida:
             return 0
+
+
+class LeitorCalendarioExcel:
+    """Planilha do calendário acadêmico: colunas “Data” e “Especificação”."""
+
+    def ler(self, caminho):
+        """-> (registros [(date, especificação)], ignoradas)"""
+        linhas = _carregar(caminho)
+        cab = [sem_acento(str(c or "")).strip().lower() for c in linhas[0]]
+        col_data = next((i for i, c in enumerate(cab) if c.startswith("data")), None)
+        col_esp = next((i for i, c in enumerate(cab) if c.startswith("especifica") or c.startswith("descri")), None)
+        faltando = [r for r, c in (("Data", col_data), ("Especificação", col_esp)) if c is None]
+        if faltando:
+            raise PlanilhaInvalida("A primeira linha da planilha não está no padrão esperado. Colunas ausentes: "
+                                   + ", ".join(faltando) + ".")
+        registros, ignoradas, vistas = [], [], set()
+        for n, linha in enumerate(linhas[1:], start=2):
+            bruto = linha[col_data] if col_data < len(linha) else None
+            esp = str(linha[col_esp]).strip() if col_esp < len(linha) and linha[col_esp] is not None else ""
+            if bruto in (None, "") and not esp:
+                continue
+            data = interpretar_data(bruto)
+            if not data:
+                ignoradas.append(f"linha {n} (data inválida)")
+            elif not esp:
+                ignoradas.append(f"linha {n} (sem especificação)")
+            elif data in vistas:
+                ignoradas.append(f"linha {n} (data {data.strftime('%d/%m/%Y')} repetida na planilha)")
+            else:
+                vistas.add(data)
+                registros.append((data, esp))
+        return registros, ignoradas

@@ -1,7 +1,9 @@
 """Implementações SQLite das portas de persistência."""
 import sqlite3
 from contextlib import contextmanager
+from datetime import date
 
+from ...dominio.calendario import DataEspecial
 from ...dominio.entidades import (
     EventoOperacao, FolhaArquivada, ItemOperacao, Operacao, RegistroEnvio, Servidor,
 )
@@ -242,3 +244,34 @@ class RepositorioConfiguracoesSQLite(_Base):
         with self._conexao() as conn:
             conn.execute("""INSERT INTO configuracoes (chave, valor) VALUES (?, ?)
                             ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor""", (chave, valor))
+
+
+class RepositorioCalendarioSQLite(_Base):
+    @staticmethod
+    def _data(r):
+        return DataEspecial(date.fromisoformat(r["data"]), r["especificacao"])
+
+    def listar(self, ano=None):
+        if ano:
+            rows = self._todos("SELECT * FROM datas_especiais WHERE data LIKE ? ORDER BY data", (f"{int(ano):04d}-%",))
+        else:
+            rows = self._todos("SELECT * FROM datas_especiais ORDER BY data")
+        return [self._data(r) for r in rows]
+
+    def anos(self):
+        return [int(r["ano"]) for r in self._todos(
+            "SELECT DISTINCT substr(data, 1, 4) AS ano FROM datas_especiais ORDER BY ano")]
+
+    def obter(self, data):
+        r = self._um("SELECT * FROM datas_especiais WHERE data = ?", (data.isoformat(),))
+        return self._data(r) if r else None
+
+    def salvar(self, data, especificacao):
+        with self._conexao() as conn:
+            conn.execute("""INSERT INTO datas_especiais (data, especificacao) VALUES (?, ?)
+                            ON CONFLICT(data) DO UPDATE SET especificacao = excluded.especificacao""",
+                         (data.isoformat(), especificacao))
+
+    def remover(self, data):
+        with self._conexao() as conn:
+            conn.execute("DELETE FROM datas_especiais WHERE data = ?", (data.isoformat(),))

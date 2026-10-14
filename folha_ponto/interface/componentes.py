@@ -7,6 +7,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from ..dominio.competencia import MESES, montar_competencia, separar_competencia
+from ..dominio.calendario import interpretar_data
 from ..dominio.entidades import Servidor
 from ..dominio.regras import ErroDominio
 from . import tema as T
@@ -323,6 +324,55 @@ class DialogoServidor(_Dialogo):
         if self.ao_salvar:
             self.ao_salvar(servidor)
         self.app.atualizar_pagina()
+
+
+class DialogoDataEspecial(_Dialogo):
+    """Inclusão/edição de uma data especial (feriado, recesso, ponto facultativo)."""
+
+    def __init__(self, app, data_especial=None, ao_salvar=None):
+        super().__init__(app)
+        self.app, self.ao_salvar, self.original = app, ao_salvar, data_especial
+        self.title("Editar data especial" if data_especial else "Nova data especial")
+        self.geometry("460x300")
+        self.resizable(False, False)
+        self.transient(app)
+        self.configure(fg_color=T.FUNDO)
+        corpo = T.cartao(self)
+        corpo.pack(fill="both", expand=True, padx=16, pady=16)
+        corpo.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(corpo, text="Data (DD/MM/AAAA)", font=T.fonte(12), text_color=T.SUAVE).grid(
+            row=0, column=0, padx=(16, 8), pady=(18, 5), sticky="w")
+        self.ent_data = T.entrada(corpo)
+        self.ent_data.grid(row=0, column=1, padx=(0, 16), pady=(18, 5), sticky="ew")
+        ctk.CTkLabel(corpo, text="Especificação", font=T.fonte(12), text_color=T.SUAVE).grid(
+            row=1, column=0, padx=(16, 8), pady=5, sticky="w")
+        self.ent_esp = T.entrada(corpo, placeholder_text="Ex.: Feriado Nacional, Recesso Acadêmico, Ponto Facultativo")
+        self.ent_esp.grid(row=1, column=1, padx=(0, 16), pady=5, sticky="ew")
+        if data_especial:
+            self.ent_data.insert(0, data_especial.data_br)
+            self.ent_esp.insert(0, data_especial.especificacao)
+        rodape = ctk.CTkFrame(self, fg_color="transparent")
+        rodape.pack(fill="x", padx=16, pady=(0, 16))
+        T.botao_primario(rodape, "Salvar", self.salvar).pack(side="right")
+        T.botao_secundario(rodape, "Cancelar", self.destroy).pack(side="right", padx=8)
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Return>", lambda e: self.salvar())
+        self.after(150, self._focar)
+
+    def salvar(self):
+        servico = self.app.servicos.calendario
+        data = interpretar_data(self.ent_data.get())
+        try:
+            servico.salvar(data, self.ent_esp.get())
+            if self.original and self.original.data != data:  # a data foi trocada: remove a antiga
+                servico.remover(self.original.data)
+        except ErroDominio as e:
+            messagebox.showwarning("Data especial", str(e), parent=self)
+            return
+        self.destroy()
+        self.app.notificar("Data especial salva.")
+        if self.ao_salvar:
+            self.ao_salvar()
 
 
 class DialogoResultado(_Dialogo):

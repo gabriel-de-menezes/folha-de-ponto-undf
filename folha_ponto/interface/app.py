@@ -12,14 +12,16 @@ from .fluxos.assinadas import FluxoAssinadas
 from .fluxos.gerar import FluxoGerar
 from .paginas.arquivo import PaginaArquivo
 from .paginas.auditoria import PaginaAuditoria
+from .paginas.calendario import PaginaCalendario
 from .paginas.configuracoes import PaginaConfiguracoes
 from .paginas.inicio import PaginaInicio
 from .paginas.servidores import PaginaServidores
 from .utilitarios import abrir_arquivo
 
-PAGINAS = dict(inicio=PaginaInicio, servidores=PaginaServidores, arquivo=PaginaArquivo, auditoria=PaginaAuditoria,
+PAGINAS = dict(inicio=PaginaInicio, servidores=PaginaServidores, calendario=PaginaCalendario, arquivo=PaginaArquivo, auditoria=PaginaAuditoria,
                config=PaginaConfiguracoes, fluxo_gerar=FluxoGerar, fluxo_assinadas=FluxoAssinadas)
-MENU = [("inicio", "⌂   Início"), ("servidores", "👥  Servidores"), ("arquivo", "🗂  Arquivo de folhas"),
+MENU = [("inicio", "⌂   Início"), ("servidores", "👥  Servidores"), ("calendario", "📅  Calendário"),
+        ("arquivo", "🗂  Arquivo de folhas"),
         ("auditoria", "🛡  Auditoria")]
 FLUXOS = ("fluxo_gerar", "fluxo_assinadas")
 
