@@ -76,6 +76,12 @@ class ArmazenamentoLocal:
         shutil.copy2(origem, destino)
         return destino, backup
 
+    def descartar_importacao(self, caminho):
+        """Apaga a página da área de espera depois de arquivada (só arquivos dessa área)."""
+        pasta = os.path.abspath(self.pasta_importacao())
+        if os.path.abspath(caminho).startswith(pasta + os.sep) and os.path.exists(caminho):
+            os.remove(caminho)
+
     def guardar_planilha_base(self, origem):
         os.makedirs(self.pasta_dados, exist_ok=True)
         if os.path.abspath(origem) != os.path.abspath(self.planilha_base):

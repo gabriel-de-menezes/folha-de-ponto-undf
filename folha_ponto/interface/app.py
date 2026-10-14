@@ -52,6 +52,42 @@ class AppDIGEP(ctk.CTk):
         self.mostrar("inicio")
         self.protocol("WM_DELETE_WINDOW", self._fechar)
         self.after(2000, self._verificar_aparencia)
+        self.after(300, self._iniciar_controle_de_uso)
+
+    # ---------- uso simultâneo ----------
+    def _iniciar_controle_de_uso(self):
+        """Avisa se outra pessoa está com o sistema aberto (pasta compartilhada) para evitar gravações simultâneas."""
+        outro = self.servicos.bloqueio.adquirir()
+        if outro:
+            self._mostrar_aviso_uso(outro)
+            if not messagebox.askyesno(
+                    "Sistema em uso por outro usuário",
+                    f"O sistema já está aberto por {outro.descricao()}.\n\n"
+                    "Abrir ao mesmo tempo pode causar perda ou conflito de dados. Recomenda-se aguardar.\n\n"
+                    "Deseja abrir mesmo assim?", icon="warning"):
+                self.destroy()
+                return
+        self.after(15000, self._batimento_de_uso)
+
+    def _batimento_de_uso(self):
+        try:
+            outro = self.servicos.bloqueio.renovar()
+            self._mostrar_aviso_uso(outro)
+        except Exception:
+            traceback.print_exc()
+        self.after(15000, self._batimento_de_uso)
+
+    def _mostrar_aviso_uso(self, outro):
+        """Faixa de aviso na base da janela enquanto outra pessoa estiver usando o sistema."""
+        if not hasattr(self, "faixa_uso"):
+            self.faixa_uso = ctk.CTkLabel(self, text="", fg_color=T.AVISO, text_color="#000000", height=34,
+                                          font=T.fonte(13, True))
+        if outro:
+            self.faixa_uso.configure(text=f"⚠  Sistema em uso por outro usuário: {outro.descricao()}. "
+                                          "Evite salvar dados ao mesmo tempo.")
+            self.faixa_uso.grid(row=1, column=0, columnspan=2, sticky="ew")
+        else:
+            self.faixa_uso.grid_forget()
 
     # ---------- layout ----------
     def _montar_menu_lateral(self):
@@ -127,6 +163,7 @@ class AppDIGEP(ctk.CTk):
             return
         for chave in FLUXOS:
             self.paginas[chave].encerrar_se_aberto("Interrompida (aplicativo fechado)")
+        self.servicos.bloqueio.liberar()
         self.destroy()
 
     # ---------- aparência ----------

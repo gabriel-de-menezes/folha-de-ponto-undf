@@ -257,13 +257,16 @@ class FolhasAssinadas:
                 self.folhas.vincular_digitalizada(f.doc_id, None, f.competencia, "Pendente Validação")
                 continue
             servidor = self.servidores.obter(f.servidor_id)
-            destino, backup = self.armazenamento.arquivar_folha(f.caminho, servidor.nome, f.competencia)
+            origem = f.caminho
+            destino, backup = self.armazenamento.arquivar_folha(origem, servidor.nome, f.competencia)
             if backup:
                 self.folhas.substituir_digitalizada(destino, backup)
                 self.auditoria.evento(op_id, f"Versão anterior de {servidor.nome} ({rotulo_competencia(f.competencia)}) "
                                              f"preservada como {os.path.basename(backup)}.")
             self.folhas.vincular_digitalizada(f.doc_id, f.servidor_id, f.competencia, "Validado", destino)
             f.caminho, f.substitui = destino, ""
+            if origem != destino:
+                self.armazenamento.descartar_importacao(origem)
         itens = self.itens(folhas, anteriores)
         sem = len(folhas) - len(atribuidas)
         self._atualizar_competencia_operacao(op_id, folhas)

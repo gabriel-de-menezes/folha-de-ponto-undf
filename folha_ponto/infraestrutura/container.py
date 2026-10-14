@@ -11,6 +11,7 @@ from ..aplicacao.gerar_folhas import GerarFolhas
 from ..aplicacao.servidores import ServicoServidores
 from .ambiente import AmbienteLocal
 from .armazenamento import ArmazenamentoLocal
+from .bloqueio import BloqueioDeUso
 from .envio_email import ServicoEmailPadrao
 from .folha_docx import GeradorFolhasDocx
 from .leitor_folhas import LeitorFolhasTesseract
@@ -35,6 +36,7 @@ class Servicos:
     consultas: Consultas
     calendario: ServicoCalendario
     armazenamento: ArmazenamentoLocal
+    bloqueio: BloqueioDeUso
 
 
 def montar_servicos(pasta_app=None, servico_email=None, gerador_folhas=None, leitor_folhas=None):
@@ -67,4 +69,5 @@ def montar_servicos(pasta_app=None, servico_email=None, gerador_folhas=None, lei
         consultas=Consultas(repo_folhas, repo_envios),
         calendario=calendario,
         armazenamento=armazenamento,
+        bloqueio=BloqueioDeUso(armazenamento.pasta_app, ambiente.usuario(), ambiente.computador()),
     )

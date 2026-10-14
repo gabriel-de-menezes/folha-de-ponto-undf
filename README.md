@@ -73,19 +73,38 @@ dos dados, SHA-256 de cada arquivo, servidores envolvidos e o resultado de cada 
    e cada servidor recebe a própria folha. Um pop-up mostra o resultado.
 
 ### 2. Enviar folhas assinadas
-1. **Mês e arquivos** — escolha o mês e selecione até 200 folhas em PDF ou imagem
-   (JPG, PNG, TIFF, BMP). Nos PDFs, o sistema lê o texto (matrícula/nome via regex)
-   e, se não conseguir, usa **OCR**; imagens vão direto para o OCR.
-2. **Conferir folhas** — clique em cada linha para ver a folha e confirmar/corrigir
-   o servidor; **Substituir arquivo…** troca a folha atribuída a alguém.
-3. **Enviar por e-mail** — igual ao fluxo 1, anexando a folha assinada importada.
+1. **Arquivos** — selecione até 200 PDFs (somente `.pdf`). Cada **página** é uma folha;
+   o sistema lê a matrícula/nome e o **mês de referência escritos em cada folha**
+   (texto do PDF e, se não houver, **OCR**), então um mesmo PDF pode ter vários
+   servidores e meses diferentes.
+2. **Conferir folhas** — uma linha por folha (servidor, mês, arquivo/página). Corrija o
+   servidor, **Defina o mês** quando não for identificado e resolva duplicidades
+   (mesmo servidor e mês) escolhendo qual folha manter. **Substituir arquivo…** troca a folha.
+3. **Enviar por e-mail** — selecione por lista, ou por grupo (todos, pendentes, com erro
+   no envio anterior). Cada servidor recebe a própria folha.
+
+As folhas conferidas são arquivadas em `Folhas_Digitalizadas/Folhas_AAAA-MM/Nome_do_Servidor-AAAA-MM.pdf`
+(sem acentos nem caracteres especiais). Se já existir folha do mesmo servidor/mês, a
+anterior é preservada como `Nome_do_Servidor-AAAA-MM_OLD_AAAAMMDD-HHMMSS.pdf`.
 
 ### Outras telas
-- **Servidores** — define a **planilha base** (usada no fluxo 1) e permite editar
-  cada servidor (dois cliques).
+- **Servidores** — importa planilha `.xlsx`/`.xls` (colunas Nome, Matrícula, CPF, E-mail,
+  Carga Horária, Acumula cargo) com **resumo prévio** (novos/atualizados/sem alteração/ignorados);
+  inclusão, edição e remoção manual; busca por nome, CPF ou matrícula.
+- **Calendário** — feriados, recessos e pontos facultativos (planilha com `Data` e
+  `Especificação`, ou edição manual). Entram automaticamente nas folhas geradas.
 - **Arquivo de folhas** — todas as folhas geradas e assinadas, com busca e prévia.
-- **Auditoria** — todas as operações (dois cliques abrem o relatório PDF) e o
-  histórico de cada e-mail enviado.
+- **Auditoria** — todas as operações (dois cliques abrem o relatório PDF) e o histórico
+  de cada e-mail (busca por nome/CPF/matrícula, filtro por situação e **Reenviar os com erro**).
+
+## Uso em pasta de rede (modo portátil)
+
+Copie o `.exe` (e, opcionalmente, a pasta `Tesseract-OCR` para OCR sem instalação) para
+uma pasta compartilhada: banco, folhas e relatórios ficam **ao lado do executável**.
+Não há login. Um arquivo `folha_ponto.lock` avisa "Sistema em uso por outro usuário"
+quando uma segunda pessoa abre o sistema ao mesmo tempo (expira sozinho se o
+programa fechar de forma abrupta). A geração de PDF depende do Word instalado em cada
+computador; sem ele, as folhas são geradas em `.docx`.
 
 ## Gerando o executável (.exe)
 

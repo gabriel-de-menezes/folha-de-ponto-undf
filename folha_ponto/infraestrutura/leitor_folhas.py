@@ -12,6 +12,12 @@ def _configurar_tesseract():
     """Encontra o tesseract.exe mesmo que não esteja no PATH (instalação padrão no Windows)."""
     if shutil.which("tesseract"):
         return
+    from .armazenamento import pasta_padrao_app
+    # 1º: Tesseract portátil ao lado do sistema (pasta de rede), sem instalação no computador
+    portatil = os.path.join(pasta_padrao_app(), "Tesseract-OCR", "tesseract.exe")
+    if os.path.exists(portatil):
+        pytesseract.pytesseract.tesseract_cmd = portatil
+        return
     for pasta in (os.environ.get("ProgramFiles", r"C:\Program Files"),
                   os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
                   os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
