@@ -57,7 +57,12 @@ class FluxoAssinadas(Fluxo):
         ], altura=8, ao_selecionar=self._ver, ao_duplo_clique=self._abrir, menu=self._menu)
         self.tab.pack(side="left", fill="both", expand=True, padx=(0, 12))
         a = self.painel.acoes
-        ctk.CTkLabel(a, text="Esta folha pertence a (digite para filtrar)", font=T.fonte(12), text_color=T.SUAVE).pack(anchor="w")
+        # Avisos da folha (duplicada, substitui a arquivada…): a coluna Observação fica estreita na tabela
+        self.lbl_obs = ctk.CTkLabel(a, text="", font=T.fonte(12, True), text_color=T.AVISO, wraplength=320,
+                                    justify="left", anchor="w")
+        self.lbl_titulo_servidor = ctk.CTkLabel(a, text="Esta folha pertence a (digite para filtrar)", font=T.fonte(12),
+                                                text_color=T.SUAVE)
+        self.lbl_titulo_servidor.pack(anchor="w")
         self.combo = T.combo(a, values=[])
         self.combo.pack(fill="x", pady=(2, 8))
         self.combo.bind("<KeyRelease>", self._filtrar)
@@ -68,8 +73,10 @@ class FluxoAssinadas(Fluxo):
         linha_mes = ctk.CTkFrame(a, fg_color="transparent")
         linha_mes.pack(fill="x", pady=(2, 0))
         self.seletor = SeletorMes(linha_mes)
+        self.seletor.opt_mes.configure(width=140)  # mês + ano + botão cabem na largura do painel
+        self.seletor.opt_ano.configure(width=90)
         self.seletor.pack(side="left")
-        self.btn_mes = T.botao_secundario(linha_mes, "Definir", self._definir_mes, width=70)
+        self.btn_mes = T.botao_secundario(linha_mes, "Definir", self._definir_mes, width=76)
         self.btn_mes.pack(side="left", padx=(8, 0))
         self.btn_substituir = T.botao_secundario(a, "Substituir arquivo…", self._substituir)
         self.btn_substituir.pack(fill="x", pady=(8, 0))
@@ -84,7 +91,7 @@ class FluxoAssinadas(Fluxo):
             if self.servicos.folhas_assinadas.ocr_disponivel():
                 self.lbl_ocr.configure(text="✓ OCR disponível neste computador.", text_color=T.SUCESSO)
             else:
-                self.lbl_ocr.configure(text="⚠ OCR (Tesseract) não instalado: PDFs escaneados (sem texto) não serão "
+                self.lbl_ocr.configure(text="⚠ OCR (Tesseract) não instalado ou sem idiomas: PDFs escaneados (sem texto) não serão "
                                             "identificados automaticamente — você poderá indicar o servidor na conferência.",
                                        text_color=T.AVISO)
         elif etapa == 1:
@@ -141,9 +148,9 @@ class FluxoAssinadas(Fluxo):
                 linhas.append((f"f-{n}", ("⚠ Não identificado", "", mes, self._arquivo(f), f.metodo, f.observacao), "erro"))
         if self.sw_sem_folha.get():
             referencia = self.servicos.folhas_assinadas.competencia_predominante(self.folhas)
-            com = {f.servidor_id for f in self.folhas if f.competencia == referencia}
+            sem_folha = self.servicos.folhas_assinadas.servidores_sem_folha(self.folhas, referencia)
             linhas += [(f"s-{s.id}", (s.nome, s.matricula, rotulo_competencia(referencia), "— sem folha", "", ""), "suave")
-                       for s in self._servidores.values() if s.id not in com]
+                       for s in sem_folha]
         self.tab.preencher(linhas, "Nenhuma folha importada.")
         atribuidas = sum(1 for f in self.folhas if f.servidor_id in self._servidores)
         sem = len(self.folhas) - atribuidas
@@ -166,8 +173,16 @@ class FluxoAssinadas(Fluxo):
     def _folha_da_linha(self, iid):
         return self.folhas[int(iid[2:])] if iid and iid.startswith("f-") else None
 
+    def _mostrar_observacao(self, texto):
+        if texto:
+            self.lbl_obs.configure(text=f"⚠ {texto}")
+            self.lbl_obs.pack(anchor="w", fill="x", pady=(0, 8), before=self.lbl_titulo_servidor)
+        else:
+            self.lbl_obs.pack_forget()
+
     def _ver(self, iid):
         folha = self._folha_da_linha(iid)
+        self._mostrar_observacao(folha.observacao if folha else "")
         if folha:
             s = self._servidores.get(folha.servidor_id)
             info = (f"{s.nome} · matrícula {s.matricula}\n{s.email or '⚠ sem e-mail'}" if s

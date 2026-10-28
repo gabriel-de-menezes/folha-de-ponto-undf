@@ -6,10 +6,12 @@ import unittest
 
 import openpyxl
 import pymupdf
+from PIL import Image
 
 from folha_ponto.dominio.entidades import ConfiguracaoEmail, MetodoIdentificacao, Servidor, StatusEnvio, TipoOperacao
 from folha_ponto.dominio.regras import ErroDominio, MatriculaDuplicada, PlanilhaInvalida
 from folha_ponto.infraestrutura.container import montar_servicos
+from folha_ponto.infraestrutura.leitor_folhas import LeitorFolhasTesseract, inclinacao
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -148,6 +150,7 @@ class TestCasosDeUso(unittest.TestCase):
         self.s.servidores.salvar(novo)
         self.assertEqual([s.nome for s in self.s.servidores.listar("77770")], ["Zélia Manual"])
         self.assertEqual([s.nome for s in self.s.servidores.listar("111.222.333")], ["Zélia Manual"])
+        self.assertEqual([s.nome for s in self.s.servidores.listar("11122233344")], ["Zélia Manual"])  # só dígitos
         self.s.servidores.remover(novo.id)
         self.assertEqual(self.s.servidores.listar("77770"), [])
         self.assertEqual(self.s.servidores.contar(), 3)
@@ -280,6 +283,58 @@ class TestCasosDeUso(unittest.TestCase):
                          ["Ana_Beatriz_Oliveira-2026-08.pdf", "Carlos_Eduardo_Santos-2026-08.pdf"])
         self.assertEqual(os.listdir(os.path.join(raiz, "Folhas_2026-09")), ["Ana_Beatriz_Oliveira-2026-09.pdf"])
         self.assertEqual(self.s.auditoria.listar()[0].competencia, "VÁRIOS MESES")
+
+    def test_pdf_ilegivel_avisa_o_usuario(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        corrompido = os.path.join(self.pasta, "corrompido.pdf")
+        with open(corrompido, "wb") as f:
+            f.write(b"%PDF-1.4\n lixo")
+        with self.assertRaises(ErroDominio) as e:
+            self.s.folhas_assinadas.importar_lote([corrompido])
+        self.assertIn("corrompido.pdf", str(e.exception))
+        self.assertEqual(self.s.auditoria.listar()[0].status, "Falha na leitura")
+
+    def test_servidores_sem_folha_considera_lotes_anteriores(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        fa = self.s.folhas_assinadas
+        op_id, folhas = fa.importar_lote([self._pdf_folhas("lote1.pdf", [("Ana Beatriz Oliveira", "17289104", "SETEMBRO/2026")])])
+        fa.concluir_conferencia(op_id, folhas)
+        _, folhas = fa.importar_lote([self._pdf_folhas("lote2.pdf", [("Carlos Eduardo Santos", "17289105", "SETEMBRO/2026")])])
+        self.assertEqual([s.nome for s in fa.servidores_sem_folha(folhas, "SETEMBRO/2026")], ["Maria Silva"])
+        self.assertEqual(len(fa.servidores_sem_folha(folhas, "AGOSTO/2026")), 3)
+
+    def test_ocr_tenta_outras_variacoes_ate_achar_servidor_e_mes(self):
+        leituras = ["", "NOME DO SERVIDOR: Ana Beatriz Oliveira", "REFERÊNCIA: SETEMBRO/2026", "nunca lida"]
+        lidas = []
+
+        class LeitorEscaneado(LeitorFolhasTesseract):
+            texto_pagina = staticmethod(lambda caminho, pagina: "")
+            ocr_disponivel = staticmethod(lambda: True)
+
+            def leituras_ocr(self, caminho, pagina):
+                for texto in leituras:
+                    lidas.append(texto)
+                    yield texto
+
+        s = montar_servicos(self.pasta, servico_email=self.email, leitor_folhas=LeitorEscaneado())
+        s.servidores.importar_planilha(self.planilha)
+        pdf = os.path.join(self.pasta, "escaneada.pdf")
+        with pymupdf.open() as doc:
+            doc.new_page()
+            doc.save(pdf)
+        _, (folha,) = s.folhas_assinadas.importar_lote([pdf])
+        self.assertEqual(s.servidores.obter(folha.servidor_id).nome, "Ana Beatriz Oliveira")
+        self.assertEqual((folha.competencia, folha.metodo), ("SETEMBRO/2026", MetodoIdentificacao.OCR))
+        self.assertEqual(len(lidas), 3)  # parou ao achar servidor e mês
+
+    def test_foto_torta_tem_a_inclinacao_detectada(self):
+        pdf = self._pdf_folhas("reta.pdf", [("Ana Beatriz Oliveira", "17289104", self.COMP)])
+        with pymupdf.open(pdf) as doc:
+            pix = doc[0].get_pixmap(dpi=150)
+        folha = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        for angulo in (-12, -4, 7):
+            torta = folha.rotate(angulo, expand=True, resample=Image.BICUBIC, fillcolor=(125, 98, 72))
+            self.assertAlmostEqual(inclinacao(torta), -angulo, delta=1)
 
     def test_duplicidade_no_mesmo_pdf_vai_para_conferencia(self):
         self.s.servidores.importar_planilha(self.planilha)

@@ -39,14 +39,16 @@ def _servidor(linha):
 
 class RepositorioServidoresSQLite(_Base):
     def listar(self, busca=""):
-        termo = f"%{(busca or '').strip()}%"
+        termo = (busca or "").strip()
+        digitos = "".join(c for c in termo if c.isdigit())
         return [_servidor(r) for r in self._todos("""
             SELECT * FROM servidores
             WHERE IFNULL(ativo, 1) = 1
-              AND (SEM_ACENTO(nome) LIKE SEM_ACENTO(?) OR matricula LIKE ? OR IFNULL(cpf, '') LIKE ?
-                   OR IFNULL(email, '') LIKE ?)
+              AND (SEM_ACENTO(nome) LIKE SEM_ACENTO(:like) OR matricula LIKE :like OR IFNULL(cpf, '') LIKE :like
+                   OR (:digitos <> '' AND REPLACE(REPLACE(IFNULL(cpf, ''), '.', ''), '-', '') LIKE :dig)
+                   OR IFNULL(email, '') LIKE :like)
             ORDER BY nome
-        """, (termo, termo, termo, termo))]
+        """, {"like": f"%{termo}%", "digitos": digitos, "dig": f"%{digitos}%"})]
 
     def obter(self, servidor_id):
         return _servidor(self._um("SELECT * FROM servidores WHERE id = ?", (servidor_id,)))
@@ -143,6 +145,13 @@ class RepositorioFolhasSQLite(_Base):
             ORDER BY data_registro DESC
         """, {"like": f"%{(termo or '').strip()}%", "comp": competencia or None})
         return [FolhaArquivada(**{**r, "data_registro": utc_para_local(r["data_registro"])}) for r in rows]
+
+    def servidores_com_folha_assinada(self, competencia):
+        """Ids dos servidores que já têm folha assinada arquivada (conferida) no mês."""
+        return {r["servidor_id"] for r in self._todos("""
+            SELECT DISTINCT servidor_id FROM folhas_digitalizadas
+            WHERE competencia = ? AND status_ocr = 'Validado' AND servidor_id IS NOT NULL
+        """, (competencia,))}
 
     def competencias(self):
         rows = self._todos("""

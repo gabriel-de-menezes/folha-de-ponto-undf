@@ -35,8 +35,8 @@ class FolhasAssinadas:
                               + ", ".join(invalidos[:5]) + ("…" if len(invalidos) > 5 else "") + ".")
 
     def identificar(self, caminho, pagina, servidores):
-        """1º lê o texto da própria página (matrícula/nome); se não identificar, usa OCR.
-        Retorna (servidor_id, competência lida, método, texto)."""
+        """1º lê o texto da própria página (matrícula/nome); se não identificar, usa OCR — tentando outras
+        variações da imagem enquanto faltar o servidor ou o mês. Retorna (servidor_id, competência lida, método, texto)."""
         texto = self.leitor.texto_pagina(caminho, pagina)
         servidor_id, competencia = identificar_servidor(texto, servidores) if texto.strip() else (None, "")
         if servidor_id and competencia:
@@ -44,15 +44,18 @@ class FolhasAssinadas:
         metodo = MetodoIdentificacao.TEXTO if servidor_id else MetodoIdentificacao.NAO_IDENTIFICADO
         if self.leitor.ocr_disponivel():
             try:
-                texto_ocr = self.leitor.ocr_pagina(caminho, pagina)
+                for texto_ocr in self.leitor.leituras_ocr(caminho, pagina):
+                    if not texto_ocr.strip():
+                        continue
+                    id_ocr, comp_ocr = identificar_servidor(texto_ocr, servidores)
+                    if not servidor_id and id_ocr:
+                        servidor_id, metodo = id_ocr, MetodoIdentificacao.OCR
+                    competencia = competencia or comp_ocr
+                    texto = texto_ocr
+                    if servidor_id and competencia:
+                        break
             except Exception as e:
-                texto_ocr, texto = "", texto or f"Erro OCR: {e}"
-            if texto_ocr.strip():
-                id_ocr, comp_ocr = identificar_servidor(texto_ocr, servidores)
-                if not servidor_id and id_ocr:
-                    servidor_id, metodo = id_ocr, MetodoIdentificacao.OCR
-                competencia = competencia or comp_ocr
-                texto = texto_ocr
+                texto = texto or f"Erro OCR: {e}"
         return servidor_id, competencia, metodo, texto
 
     def processar_arquivo(self, caminho, servidores, competencia_padrao=""):
@@ -93,18 +96,24 @@ class FolhasAssinadas:
         if not servidores:
             raise ErroDominio("Nenhum servidor cadastrado. Cadastre ou importe os servidores primeiro.")
         op_id = self.auditoria.iniciar(TipoOperacao.ASSINADAS, VARIOS_MESES, f"{len(caminhos)} arquivo(s) importado(s)")
-        folhas, vistos = [], set()
+        folhas, vistos, ilegiveis = [], set(), []
         for n, caminho in enumerate(caminhos):
             progresso(n, len(caminhos), f"Lendo {os.path.basename(caminho)}")
             try:
                 lidas = self.processar_arquivo(caminho, servidores)
             except Exception as e:
                 self.auditoria.evento(op_id, f"Erro ao ler {os.path.basename(caminho)}: {e}")
+                ilegiveis.append(os.path.basename(caminho))
                 continue
             for folha in lidas:
                 if folha.doc_id not in vistos:
                     vistos.add(folha.doc_id)
                     folhas.append(folha)
+        if not folhas:
+            self.auditoria.finalizar(op_id, "Falha na leitura", [])
+            motivo = (f"Não foi possível ler: {', '.join(ilegiveis[:5])}. O PDF pode estar corrompido ou protegido "
+                      "por senha." if ilegiveis else "Os arquivos selecionados não têm páginas.")
+            raise ErroDominio(motivo)
         resolver_conflitos(folhas)
         self._marcar_substituicoes(folhas)
         self._atualizar_competencia_operacao(op_id, folhas)
@@ -146,6 +155,12 @@ class FolhasAssinadas:
     def competencia_predominante(folhas):
         contagem = Counter(f.competencia for f in folhas if f.competencia)
         return contagem.most_common(1)[0][0] if contagem else ""
+
+    def servidores_sem_folha(self, folhas, competencia):
+        """Servidores sem folha assinada do mês: nem neste lote nem arquivada em importações anteriores."""
+        com = {f.servidor_id for f in folhas if f.servidor_id and f.competencia == competencia}
+        com |= self.folhas.servidores_com_folha_assinada(competencia)
+        return [s for s in self.servidores.listar() if s.id not in com]
 
     # ---------- conferência ----------
     @staticmethod
