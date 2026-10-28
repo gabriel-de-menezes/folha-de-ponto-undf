@@ -5,7 +5,12 @@ import os
 
 def build():
     print("=== INICIANDO BUILD DO EXECUTAVEL (.EXE) VIA PYINSTALLER ===")
-    
+
+    # O PyInstaller só empacota o que está instalado: garante todas as bibliotecas nas versões do requirements.txt
+    if subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"]).returncode != 0:
+        print("\n[ERRO] Nao foi possivel instalar as dependencias do requirements.txt.")
+        sys.exit(1)
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
@@ -15,6 +20,7 @@ def build():
         "--add-data=recursos/Modelo de folha de ponto - Exemplo.docx;recursos",
         "--add-data=recursos/Planilha de professores - exemplo.xlsx;recursos",
         "--collect-data=customtkinter",
+        "--collect-data=docx",
         "--hidden-import=pythoncom",
         "--hidden-import=win32com.client",
         "--collect-submodules=folha_ponto",
@@ -32,6 +38,7 @@ def build():
         print("=======================================================")
     else:
         print("\n[ERRO] ERRO DURANTE A COMPILACAO DO EXECUTAVEL.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     build()

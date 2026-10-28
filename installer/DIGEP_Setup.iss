@@ -3,8 +3,7 @@
 ; Como gerar o instalador (no Windows):
 ;   1. Rode "python build_exe.py" na raiz do projeto (gera dist\DIGEP_Folha_de_Ponto.exe).
 ;   2. Rode "python installer\preparar_tesseract.py" (copia o Tesseract OCR deste computador para
-;      installer\Tesseract-OCR, para o instalador leva-lo junto). Sem esse passo o instalador e gerado
-;      sem OCR, e folhas escaneadas nao sao reconhecidas nos computadores sem Tesseract.
+;      installer\Tesseract-OCR, para o instalador leva-lo junto). Sem esse passo a compilacao para com erro.
 ;   3. Instale o Inno Setup (gratuito): https://jrsoftware.org/isdl.php
 ;   4. Abra este arquivo no Inno Setup Compiler e clique em "Compile" (ou rode
 ;      "ISCC installer\DIGEP_Setup.iss" pelo prompt de comando).
@@ -31,7 +30,13 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequiredOverridesAllowed=commandline dialog
+; Instala só para o usuário atual (em %LOCALAPPDATA%\Programs), sem pedir administrador. A TI ainda pode
+; instalar para todos com "/ALLUSERS" na linha de comando.
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=commandline
+; Se o DIGEP estiver aberto, fecha antes de substituir o .exe (senão a atualização não é gravada)
+CloseApplications=force
+RestartApplications=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
@@ -51,11 +56,12 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 #if ComTesseract
 Source: "Tesseract-OCR\*"; DestDir: "{app}\Tesseract-OCR"; Flags: ignoreversion recursesubdirs createallsubdirs
 #else
-  #pragma warning "installer\Tesseract-OCR nao encontrado: o instalador sera gerado SEM OCR. Rode installer\preparar_tesseract.py."
+  #error "installer\Tesseract-OCR nao encontrado: rode python installer\preparar_tesseract.py antes de compilar."
 #endif
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\Verificar instalação do {#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--verificar"
 Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
@@ -69,9 +75,25 @@ begin
   Result := RegKeyExists(HKEY_CLASSES_ROOT, 'Word.Application\CLSID');
 end;
 
+// Roda o próprio DIGEP em modo de verificação (planilha, geração das folhas, OCR, e-mail) numa pasta temporária.
+procedure VerificarInstalacao;
+var
+  Codigo: Integer;
+begin
+  WizardForm.StatusLabel.Caption := 'Verificando a instalação…';
+  if not Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--verificar --silencioso', ExpandConstant('{app}'),
+              SW_HIDE, ewWaitUntilTerminated, Codigo) or (Codigo <> 0) then
+    SuppressibleMsgBox('A verificação da instalação encontrou problemas.' + #13#10#13#10 +
+      'Os detalhes estão em:' + #13#10 + ExpandConstant('{app}\verificacao.txt') + #13#10#13#10 +
+      'Envie esse arquivo para quem dá suporte ao DIGEP.', mbError, MB_OK, IDOK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and not WordInstalado then
+  if CurStep <> ssPostInstall then
+    exit;
+  VerificarInstalacao;
+  if not WordInstalado then
     SuppressibleMsgBox('O Microsoft Word não foi encontrado neste computador.' + #13#10#13#10 +
       'O DIGEP funciona normalmente, mas as folhas de ponto geradas sairão apenas em Word (.docx), ' +
       'sem a versão em PDF. Para gerar os PDFs, instale o Microsoft Word.',
