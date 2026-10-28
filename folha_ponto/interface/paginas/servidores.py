@@ -37,6 +37,8 @@ class PaginaServidores(Pagina):
 
         barra = ctk.CTkFrame(self, fg_color="transparent")
         barra.pack(fill="x", pady=(0, 12))
+        T.botao_secundario(barra, "Limpar todos", self.limpar_todos, width=130,
+                           text_color=T.PERIGO).pack(side="right", padx=(8, 0))
         T.botao_secundario(barra, "Remover selecionado", self.remover, width=170).pack(side="right")
         T.botao_primario(barra, "＋ Novo servidor", lambda: DialogoServidor(app, None), width=160).pack(side="right", padx=8)
         self.busca = T.entrada(barra, placeholder_text="Buscar por nome, CPF ou matrícula…")
@@ -90,6 +92,21 @@ class PaginaServidores(Pagina):
             return
         self.servicos.servidores.remover(servidor.id)
         self.app.notificar(f"{servidor.nome} removido.")
+        self.atualizar()
+
+    def limpar_todos(self):
+        total = self.servicos.servidores.contar()
+        if not total:
+            messagebox.showinfo("Limpar servidores", "Não há servidores cadastrados.")
+            return
+        if not messagebox.askyesno("Limpar servidores",
+                                   f"Remover TODOS os {total} servidor(es) cadastrados?\n\n"
+                                   "Use antes de substituir a planilha base para ficar só com os servidores da planilha nova. "
+                                   "As folhas e envios já registrados continuam no arquivo e no histórico.",
+                                   icon="warning", default="no"):
+            return
+        removidos = self.servicos.servidores.remover_todos()
+        self.app.notificar(f"{removidos} servidor(es) removido(s).")
         self.atualizar()
 
     def _ver_no_arquivo(self, iid):

@@ -75,6 +75,11 @@ class ServicoServidores:
             raise PlanilhaInvalida("Servidor não encontrado.")
         self.repositorio.remover(servidor_id)
 
+    def remover_todos(self):
+        """Remove todos os servidores das listas (ex.: antes de importar uma planilha base nova).
+        Folhas e envios já registrados continuam consultáveis. Devolve quantos foram removidos."""
+        return self.repositorio.remover_todos()
+
     def analisar_planilha(self, caminho):
         """Lê e valida a planilha (extensão, colunas, linhas) e conta o que mudaria, sem gravar nada.
         Levanta PlanilhaInvalida."""

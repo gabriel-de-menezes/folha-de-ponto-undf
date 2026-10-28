@@ -159,6 +159,18 @@ class TestCasosDeUso(unittest.TestCase):
         self.s.servidores.salvar(Servidor(nome="Zélia Nova", matricula="77770"))
         self.assertEqual(self.s.servidores.listar("77770")[0].nome, "Zélia Nova")
 
+    def test_limpar_todos_os_servidores(self):
+        self.s.servidores.importar_planilha(self.planilha)
+        ana = self.s.servidores.listar("ana")[0]
+        self.assertEqual(self.s.servidores.remover_todos(), 3)
+        self.assertEqual(self.s.servidores.contar(), 0)
+        self.assertEqual(self.s.servidores.obter(ana.id).nome, ana.nome)  # histórico preservado
+        # importar de novo só traz os da planilha, reativando os cadastros
+        resumo = self.s.servidores.analisar_planilha(self.planilha)
+        self.assertEqual(resumo.novos, 3)
+        self.s.servidores.confirmar_importacao(resumo)
+        self.assertEqual(self.s.servidores.contar(), 3)
+
     def test_matricula_duplicada_na_edicao(self):
         self.s.servidores.importar_planilha(self.planilha)
         ana, carlos = self.s.servidores.listar("ana")[0], self.s.servidores.listar("carlos")[0]

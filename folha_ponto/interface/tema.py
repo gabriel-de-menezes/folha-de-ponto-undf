@@ -80,9 +80,10 @@ def botao_primario(master, texto, comando, **kw):
 def botao_secundario(master, texto, comando, **kw):
     kw.setdefault("height", 36)
     kw.setdefault("font", fonte(12))
+    kw.setdefault("text_color", TEXTO)
     return ctk.CTkButton(
         master, text=texto, command=comando, fg_color="transparent", border_width=1,
-        border_color=BORDA, text_color=TEXTO, hover_color=BORDA, corner_radius=8, **kw,
+        border_color=BORDA, hover_color=BORDA, corner_radius=8, **kw,
     )
 
 

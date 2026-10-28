@@ -61,6 +61,11 @@ class RepositorioServidoresSQLite(_Base):
         with self._conexao() as conn:
             conn.execute("UPDATE servidores SET ativo = 0 WHERE id = ?", (servidor_id,))
 
+    def remover_todos(self):
+        """Remoção lógica de todos os servidores ativos. Devolve quantos foram removidos."""
+        with self._conexao() as conn:
+            return conn.execute("UPDATE servidores SET ativo = 0 WHERE IFNULL(ativo, 1) = 1").rowcount
+
     def salvar(self, servidor):
         campos = Servidor.CAMPOS
         try:
