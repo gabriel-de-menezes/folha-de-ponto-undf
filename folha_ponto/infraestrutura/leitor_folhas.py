@@ -29,17 +29,20 @@ def _tessdata_do_registro():
 
 def _configurar_tesseract():
     """Encontra o tesseract.exe mesmo que não esteja no PATH (instalação padrão no Windows)."""
+    from .armazenamento import pasta_padrao_app
+    # 1º: o Tesseract que acompanha o sistema (instalador ou pasta de rede), que já vem com os idiomas usados.
+    # Tem prioridade sobre um Tesseract instalado no computador, que pode não ter o português.
+    portatil = os.path.join(pasta_padrao_app(), "Tesseract-OCR")
+    if os.path.exists(os.path.join(portatil, "tesseract.exe")):
+        pytesseract.pytesseract.tesseract_cmd = os.path.join(portatil, "tesseract.exe")
+        if os.path.isdir(os.path.join(portatil, "tessdata")):
+            os.environ["TESSDATA_PREFIX"] = os.path.join(portatil, "tessdata")
+        return
     if not os.environ.get("TESSDATA_PREFIX"):
         tessdata = _tessdata_do_registro()
         if tessdata:
             os.environ["TESSDATA_PREFIX"] = tessdata
     if shutil.which("tesseract"):
-        return
-    from .armazenamento import pasta_padrao_app
-    # 1º: Tesseract portátil ao lado do sistema (pasta de rede), sem instalação no computador
-    portatil = os.path.join(pasta_padrao_app(), "Tesseract-OCR", "tesseract.exe")
-    if os.path.exists(portatil):
-        pytesseract.pytesseract.tesseract_cmd = portatil
         return
     for pasta in (os.environ.get("ProgramFiles", r"C:\Program Files"),
                   os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),

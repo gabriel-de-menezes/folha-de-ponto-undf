@@ -2,6 +2,7 @@ import customtkinter as ctk
 
 from ...dominio.entidades import ConfiguracaoEmail
 from .. import tema as T
+from ..componentes import DialogoSenhaAppGoogle
 from ..utilitarios import abrir_pasta
 from .base import Pagina
 
@@ -45,12 +46,13 @@ class PaginaConfiguracoes(Pagina):
         self.var_tls = ctk.BooleanVar(value=cfg.usar_tls)
         ctk.CTkCheckBox(f, text="Usar STARTTLS (porta 587)", variable=self.var_tls, font=T.fonte(12),
                         fg_color=T.PRIMARIA).grid(row=5, column=1, padx=(0, 20), pady=5, sticky="w")
-        ctk.CTkLabel(f, text="Gmail: smtp.gmail.com · porta 587 · STARTTLS · usuário = seu e-mail · senha = senha de app "
-                             "(Conta Google → Segurança → Verificação em duas etapas → Senhas de app).\n"
+        ctk.CTkLabel(f, text="Gmail: smtp.gmail.com · porta 587 · STARTTLS · usuário = seu e-mail · senha = senha de app.\n"
                              "Office 365 / Outlook.com: smtp.office365.com · porta 587 · STARTTLS.\n"
                              "Servidor institucional (ex.: conta digep@undf.edu.br): peça host, porta e credenciais à equipe de TI.",
                      font=T.fonte(12), text_color=T.SUAVE, justify="left", wraplength=820).grid(
             row=6, column=0, columnspan=2, padx=20, pady=(8, 0), sticky="w")
+        T.link(f, "Como gerar a senha de app do Google  →", self.tutorial_gmail).grid(
+            row=7, column=0, columnspan=2, padx=14, pady=(4, 0), sticky="w")
         self.frames["SMTP"] = f
 
         f2 = ctk.CTkFrame(card, fg_color="transparent")
@@ -100,9 +102,22 @@ class PaginaConfiguracoes(Pagina):
         self.frames[self._metodo()].pack(fill="x", before=self._rodape_email)
         self.lbl_status.configure(text="")
 
+    def tutorial_gmail(self):
+        DialogoSenhaAppGoogle(self.app, self._preencher_gmail)
+
+    def _preencher_gmail(self):
+        for chave, valor in (("host", "smtp.gmail.com"), ("porta", "587")):
+            self.campos[chave].delete(0, "end")
+            self.campos[chave].insert(0, valor)
+        self.var_tls.set(True)
+        self.lbl_status.configure(text="Dados do Gmail preenchidos. Informe seu e-mail e a senha de app.", text_color=T.SUAVE)
+        self.campos["usuario"].focus_set()
+
     def _config_do_formulario(self):
         valores = {k: (e.get() if k == "senha" else e.get().strip()) for k, e in self.campos.items()}
         valores["porta"] = valores["porta"] or "587"
+        if "gmail" in valores["host"].lower():  # a senha de app é exibida em blocos separados por espaço
+            valores["senha"] = valores["senha"].replace(" ", "")
         return ConfiguracaoEmail(metodo=self._metodo(), usar_tls=self.var_tls.get(), **valores)
 
     def salvar(self):

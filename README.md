@@ -121,14 +121,27 @@ copiar o `.exe` avulso), há um instalador feito com o [Inno Setup](https://jrso
 (gratuito):
 
 1. Gere o executável primeiro (`python build_exe.py`).
-2. Instale o Inno Setup no Windows.
-3. Abra `installer/DIGEP_Setup.iss` no Inno Setup Compiler e clique em **Compile**
+2. Rode `python installer/preparar_tesseract.py`. Ele copia o Tesseract instalado neste
+   computador (só o `tesseract.exe`, as DLLs que ele usa e os idiomas `por`, `eng` e `osd`)
+   para `installer/Tesseract-OCR` e confere se a cópia funciona sozinha. Sem esse passo o
+   instalador é gerado sem OCR.
+3. Instale o Inno Setup no Windows (`winget install JRSoftware.InnoSetup`).
+4. Abra `installer/DIGEP_Setup.iss` no Inno Setup Compiler e clique em **Compile**
    (ou rode `ISCC installer\DIGEP_Setup.iss` no prompt de comando).
-4. O instalador final é gerado em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`.
+5. O instalador final é gerado em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`.
 
-O instalador cria atalho no Menu Iniciar (e, opcionalmente, na Área de Trabalho),
-grava um desinstalador em "Adicionar ou remover programas" e, ao final, oferece
-abrir o app — tudo em português.
+O instalador:
+- leva o Tesseract junto, então o OCR funciona sem instalar mais nada;
+- dá aos usuários permissão de gravação na pasta do sistema (o banco e as folhas ficam ao
+  lado do `.exe`, mesmo em "Arquivos de Programas");
+- avisa se o Microsoft Word não estiver instalado (sem ele as folhas saem só em `.docx`);
+- cria atalho no Menu Iniciar (e, opcionalmente, na Área de Trabalho), grava um
+  desinstalador em "Adicionar ou remover programas" e, ao final, oferece abrir o app.
+
+Ao desinstalar, o banco de dados e as folhas são mantidos na pasta.
+
+Para testar num Windows limpo, use a Área Restrita do Windows (Windows Sandbox): ela não tem
+Python, Tesseract nem Office, como os computadores da DIGEP.
 
 ## Testes
 

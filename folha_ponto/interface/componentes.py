@@ -1,6 +1,7 @@
 """Componentes visuais reutilizáveis: tabela, pré-visualização, seletor de mês, etapas e diálogos."""
 import dataclasses
 import tkinter as tk
+import webbrowser
 from datetime import date
 from tkinter import messagebox, ttk
 
@@ -382,6 +383,75 @@ class DialogoDataEspecial(_Dialogo):
         self.app.notificar("Data especial salva.")
         if self.ao_salvar:
             self.ao_salvar()
+
+
+class DialogoSenhaAppGoogle(_Dialogo):
+    """Tutorial: como gerar a senha de app do Google para enviar pelo Gmail."""
+
+    URL = "https://myaccount.google.com/apppasswords"
+    PASSOS = [
+        ("Entre na sua Conta Google",
+         "Use o mesmo e-mail que vai enviar as folhas, em myaccount.google.com."),
+        ("Ative a verificação em duas etapas",
+         "Menu Segurança → “Como você faz login no Google” → Verificação em duas etapas. "
+         "Sem ela, a opção de senha de app não aparece."),
+        ("Abra a página “Senhas de app”",
+         "Use o botão abaixo ou digite “Senhas de app” na busca da Conta Google."),
+        ("Crie a senha",
+         "Dê um nome para identificar o uso, por exemplo DIGEP, e clique em Criar."),
+        ("Copie a senha de 16 letras",
+         "Ela aparece em quatro blocos e só é mostrada uma vez. Os espaços não fazem parte da senha."),
+        ("Preencha o DIGEP",
+         "Servidor smtp.gmail.com · porta 587 · STARTTLS marcado · usuário = seu e-mail completo · "
+         "senha de aplicativo = as 16 letras."),
+        ("Teste e salve",
+         "Clique em “Testar conexão” e, se der certo, em “Salvar”."),
+    ]
+
+    def __init__(self, app, ao_preencher_gmail=None):
+        super().__init__(app)
+        self.ao_preencher_gmail = ao_preencher_gmail
+        self.title("Senha de app do Google")
+        self.geometry("640x690")
+        self.resizable(False, True)
+        self.transient(app)
+        self.configure(fg_color=T.FUNDO)
+
+        ctk.CTkLabel(self, text="Como gerar a senha de app do Google", font=T.fonte(18, True),
+                     text_color=T.TEXTO).pack(anchor="w", padx=24, pady=(20, 2))
+        ctk.CTkLabel(self, text="O Gmail não aceita a senha normal da conta em outros programas. "
+                                "Ele exige uma senha de app, criada uma única vez.",
+                     font=T.fonte(12), text_color=T.SUAVE, justify="left", wraplength=580).pack(anchor="w", padx=24)
+
+        lista = ctk.CTkScrollableFrame(self, fg_color=T.CARTAO, corner_radius=12, border_width=1, border_color=T.BORDA)
+        lista.pack(fill="both", expand=True, padx=16, pady=14)
+        lista.grid_columnconfigure(1, weight=1)
+        for n, (titulo, texto) in enumerate(self.PASSOS):
+            ctk.CTkLabel(lista, text=str(n + 1), width=28, height=28, corner_radius=14, fg_color=T.PRIMARIA,
+                         text_color="#FFFFFF", font=T.fonte(12, True)).grid(row=n, column=0, padx=12, pady=(10, 4), sticky="n")
+            passo = ctk.CTkFrame(lista, fg_color="transparent")
+            passo.grid(row=n, column=1, padx=(0, 12), pady=(8, 4), sticky="ew")
+            ctk.CTkLabel(passo, text=titulo, font=T.fonte(13, True), text_color=T.TEXTO, height=22).pack(anchor="w")
+            ctk.CTkLabel(passo, text=texto, font=T.fonte(12), text_color=T.SUAVE, justify="left",
+                         wraplength=500, height=18).pack(anchor="w")
+
+        ctk.CTkLabel(self, text="Conta institucional (Google Workspace)? O administrador pode ter desativado as senhas de app; "
+                                "nesse caso, peça à equipe de TI. Se você trocar a senha da conta, as senhas de app são "
+                                "canceladas e é preciso criar outra.",
+                     font=T.fonte(12), text_color=T.AVISO, justify="left", wraplength=590).pack(anchor="w", padx=24)
+
+        rodape = ctk.CTkFrame(self, fg_color="transparent")
+        rodape.pack(fill="x", padx=16, pady=16)
+        T.botao_primario(rodape, "Abrir página de senhas de app", lambda: webbrowser.open(self.URL)).pack(side="right")
+        if ao_preencher_gmail:
+            T.botao_secundario(rodape, "Preencher dados do Gmail", self._preencher).pack(side="right", padx=8)
+        T.botao_secundario(rodape, "Fechar", self.destroy, width=90).pack(side="left")
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.after(150, self._focar)
+
+    def _preencher(self):
+        self.ao_preencher_gmail()
+        self.destroy()
 
 
 class DialogoResultado(_Dialogo):
