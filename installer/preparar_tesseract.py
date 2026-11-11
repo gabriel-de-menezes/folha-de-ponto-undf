@@ -125,12 +125,30 @@ def baixar_tesseract(pasta_temporaria):
     return extraido
 
 
+def tessdata_do_registro():
+    """TESSDATA_PREFIX gravado no Windows (um terminal aberto antes de o Tesseract ser instalado não herda a
+    variável). Mesma busca de folha_ponto/infraestrutura/leitor_folhas.py, repetida aqui para este script
+    rodar só com o Python, sem as bibliotecas do projeto."""
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    for raiz, chave in ((winreg.HKEY_CURRENT_USER, r"Environment"),
+                        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+        try:
+            with winreg.OpenKey(raiz, chave) as k:
+                valor = os.path.expandvars(winreg.QueryValueEx(k, "TESSDATA_PREFIX")[0])
+            if os.path.isdir(valor):
+                return valor
+        except OSError:
+            pass
+    return ""
+
+
 def achar_idiomas(pasta_tesseract):
     candidatas = [os.environ.get("TESSDATA_PREFIX", ""), os.path.join(pasta_tesseract, "tessdata"),
                   os.path.expanduser(r"~\scoop\apps\tesseract-languages\current")]
-    sys.path.insert(0, os.path.dirname(AQUI))
-    from folha_ponto.infraestrutura.leitor_folhas import _tessdata_do_registro
-    candidatas.append(_tessdata_do_registro())
+    candidatas.append(tessdata_do_registro())
     achados = {}
     for idioma in IDIOMAS:
         arquivos = (os.path.join(pasta, f"{idioma}.traineddata") for pasta in filter(None, candidatas))
