@@ -10,7 +10,8 @@ Uso:  python installer/preparar_tesseract.py [pasta_do_tesseract] [--instalar | 
 
   --instalar   se o Tesseract não estiver neste computador, instala-o antes pelo winget
   --baixar     não usa o Tesseract deste computador: baixa o instalador oficial e extrai os arquivos
-               dele com o 7-Zip, sem instalar nada (funciona também no Linux)
+               dele com o 7-Zip, sem instalar nada (funciona também no Linux). No Windows sem 7-Zip,
+               baixa também uma cópia temporária do 7-Zip.
 """
 import argparse
 import glob
@@ -31,6 +32,11 @@ PACOTE_WINGET = "UB-Mannheim.TesseractOCR"
 URL_INSTALADOR = ("https://github.com/tesseract-ocr/tesseract/releases/download/5.5.3/"
                   "tesseract-ocr-w64-setup-5.5.3.20260724.exe")
 SHA256_INSTALADOR = "bee9e3434bd94fd65387d9be28cd467a41f61b1275383b55b0f59a1331270ae4"
+# 7-Zip oficial, usado por --baixar no Windows quando não há 7-Zip instalado: o 7zr.exe (avulso) abre o
+# instalador do 7-Zip, de onde saem o 7z.exe e a 7z.dll que sabem abrir o instalador do Tesseract.
+URL_7ZR = "https://www.7-zip.org/a/7zr.exe"  # sempre a versão mais recente, por isso sem SHA-256 fixo
+URL_7ZIP = "https://www.7-zip.org/a/7z2501-x64.exe"
+SHA256_7ZIP = "78afa2a1c773caf3cf7edf62f857d2a8a5da55fb0fff5da416074c0d28b2b55f"
 
 
 def pastas_candidatas(informada=None):
@@ -64,13 +70,28 @@ def achar_tesseract(informada=None, instalar=False):
                         "--accept-package-agreements", "--accept-source-agreements"])
         pasta = procurar_tesseract(informada)
     if pasta is None:
-        sys.exit("Tesseract não encontrado. Rode de novo com --instalar (instala pelo winget), instale-o "
-                 "manualmente (https://github.com/UB-Mannheim/tesseract/wiki) ou informe a pasta: "
+        sys.exit("Tesseract não encontrado neste computador. Rode de novo com --baixar (baixa o Tesseract "
+                 "oficial, sem instalar nada) ou informe a pasta onde ele está: "
                  "python installer/preparar_tesseract.py <pasta>")
     return pasta
 
 
-def achar_7zip():
+def baixar(url, destino, sha256=None):
+    print(f"Baixando {url}")
+    try:
+        with urllib.request.urlopen(url, timeout=300) as resposta, open(destino, "wb") as arquivo:
+            shutil.copyfileobj(resposta, arquivo)
+    except OSError as erro:
+        sys.exit(f"Não foi possível baixar {url} ({erro}). Confira a internet (ou o proxy/antivírus) e rode de novo.")
+    if sha256:
+        with open(destino, "rb") as arquivo:
+            obtido = hashlib.sha256(arquivo.read()).hexdigest()
+        if obtido != sha256:
+            sys.exit(f"O arquivo baixado de {url} não confere (SHA-256 {obtido}).")
+    return destino
+
+
+def achar_7zip(pasta_temporaria):
     for nome in ("7z", "7zz", "7za"):
         if shutil.which(nome):
             return shutil.which(nome)
@@ -78,24 +99,25 @@ def achar_7zip():
         exe = os.path.join(base, "7-Zip", "7z.exe")
         if base and os.path.isfile(exe):
             return exe
-    sys.exit("7-Zip não encontrado (necessário para --baixar). Instale-o: https://www.7-zip.org "
-             "(no Linux: sudo apt install 7zip).")
+    if os.name != "nt":
+        sys.exit("7-Zip não encontrado (necessário para --baixar). Instale-o: sudo apt install 7zip.")
+    # Windows sem 7-Zip: usa uma cópia temporária do 7-Zip oficial, sem instalar nada
+    pasta = os.path.join(pasta_temporaria, "7zip")
+    os.makedirs(pasta)
+    sete_zr = baixar(URL_7ZR, os.path.join(pasta, "7zr.exe"))
+    instalador = baixar(URL_7ZIP, os.path.join(pasta, "7zip-setup.exe"), SHA256_7ZIP)
+    saida = subprocess.run([sete_zr, "x", "-y", f"-o{pasta}", instalador, "7z.exe", "7z.dll"],
+                           capture_output=True, text=True)
+    exe = os.path.join(pasta, "7z.exe")
+    if saida.returncode != 0 or not os.path.isfile(exe):
+        sys.exit(f"Não foi possível preparar o 7-Zip:\n{saida.stdout}\n{saida.stderr}")
+    return exe
 
 
 def baixar_tesseract(pasta_temporaria):
     """Baixa o instalador oficial, confere o SHA-256 e extrai os arquivos, sem instalar. Devolve a pasta extraída."""
-    sete_zip = achar_7zip()
-    instalador = os.path.join(pasta_temporaria, "tesseract-setup.exe")
-    print(f"Baixando o Tesseract de {URL_INSTALADOR}")
-    try:
-        with urllib.request.urlopen(URL_INSTALADOR, timeout=300) as resposta, open(instalador, "wb") as arquivo:
-            shutil.copyfileobj(resposta, arquivo)
-    except OSError as erro:
-        sys.exit(f"Não foi possível baixar o Tesseract ({erro}).")
-    with open(instalador, "rb") as arquivo:
-        sha = hashlib.sha256(arquivo.read()).hexdigest()
-    if sha != SHA256_INSTALADOR:
-        sys.exit(f"O instalador do Tesseract baixado não confere (SHA-256 {sha}).")
+    sete_zip = achar_7zip(pasta_temporaria)
+    instalador = baixar(URL_INSTALADOR, os.path.join(pasta_temporaria, "tesseract-setup.exe"), SHA256_INSTALADOR)
     extraido = os.path.join(pasta_temporaria, "extraido")
     saida = subprocess.run([sete_zip, "x", "-y", f"-o{extraido}", instalador], capture_output=True, text=True)
     if saida.returncode != 0 or not procurar_tesseract(extraido):

@@ -143,7 +143,8 @@ O Tesseract é preparado por `installer/preparar_tesseract.py`, que leva só o `
 DLLs que ele usa e os idiomas `por`, `eng` e `osd`:
 
 - `--baixar` baixa o instalador oficial do Tesseract, confere o SHA-256 e extrai os arquivos com
-  o 7-Zip, sem instalar nada (é o que o `gerar_instalador.py` usa);
+  o 7-Zip, sem instalar nada (é o que o `gerar_instalador.py` usa); no Windows sem 7-Zip, baixa
+  também uma cópia temporária do 7-Zip oficial;
 - `--instalar` instala o Tesseract pelo winget se ele não estiver no computador e copia de lá;
 - sem opção, copia o Tesseract já instalado neste computador.
 

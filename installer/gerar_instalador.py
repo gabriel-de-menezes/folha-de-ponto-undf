@@ -46,10 +46,7 @@ def garantir_exe(recompilar):
 def garantir_tesseract():
     if os.path.isfile(os.path.join(TESSERACT, "tesseract.exe")):
         return
-    tem_7zip = any(shutil.which(n) for n in ("7z", "7zz", "7za")) or any(
-        os.path.isfile(os.path.join(os.environ.get(v, ""), "7-Zip", "7z.exe")) for v in ("ProgramFiles", "ProgramFiles(x86)"))
-    modo = "--baixar" if tem_7zip or os.name != "nt" else "--instalar"
-    rodar([sys.executable, os.path.join(AQUI, "preparar_tesseract.py"), modo])
+    rodar([sys.executable, os.path.join(AQUI, "preparar_tesseract.py"), "--baixar"])
 
 
 def achar_iscc():
