@@ -1,12 +1,12 @@
 ﻿; Script do Inno Setup para o instalador do DIGEP - Sistema de Gestao de Folhas de Ponto (UnDF)
 ;
-; Como gerar o instalador (no Windows):
-;   1. Rode "python build_exe.py" na raiz do projeto (gera dist\DIGEP_Folha_de_Ponto.exe).
-;   2. Rode "python installer\preparar_tesseract.py" (copia o Tesseract OCR deste computador para
-;      installer\Tesseract-OCR, para o instalador leva-lo junto). Sem esse passo a compilacao para com erro.
-;   3. Instale o Inno Setup (gratuito): https://jrsoftware.org/isdl.php
-;   4. Abra este arquivo no Inno Setup Compiler e clique em "Compile" (ou rode
-;      "ISCC installer\DIGEP_Setup.iss" pelo prompt de comando).
+; Como gerar o instalador (no Windows): de dois cliques em installer\gerar_instalador.bat (ou rode
+; "python installer\gerar_instalador.py"). Ele faz os passos abaixo sozinho:
+;   1. Usa o dist\DIGEP_Folha_de_Ponto.exe (gerado por "python build_exe.py").
+;   2. Roda "python installer\preparar_tesseract.py --baixar", que baixa o Tesseract OCR oficial para
+;      installer\Tesseract-OCR, para o instalador leva-lo junto. Sem essa pasta a compilacao para com erro.
+;   3. Instala o Inno Setup pelo winget, se faltar (https://jrsoftware.org/isdl.php).
+;   4. Compila este arquivo ("ISCC installer\DIGEP_Setup.iss").
 ;   5. O instalador final fica em installer\output\DIGEP_Folha_de_Ponto_Setup.exe.
 
 #define MyAppName "DIGEP - Folha de Ponto"
@@ -56,7 +56,7 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 #if ComTesseract
 Source: "Tesseract-OCR\*"; DestDir: "{app}\Tesseract-OCR"; Flags: ignoreversion recursesubdirs createallsubdirs
 #else
-  #error "installer\Tesseract-OCR nao encontrado: rode python installer\preparar_tesseract.py antes de compilar."
+  #error "installer\Tesseract-OCR nao encontrado: rode python installer\gerar_instalador.py (ou python installer\preparar_tesseract.py --baixar) antes de compilar."
 #endif
 
 [Icons]

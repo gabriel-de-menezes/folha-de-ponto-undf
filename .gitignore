@@ -11,3 +11,5 @@ dados/
 folha_ponto.lock
 verificacao.txt
 ~$*
+venv/
+.venv/

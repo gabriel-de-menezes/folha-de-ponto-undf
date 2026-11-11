@@ -1,0 +1,41 @@
+name: Instalador
+
+# Gera o instalador completo (app + Tesseract OCR) em um Windows limpo do GitHub.
+# Baixe o resultado em Actions > Instalador > (execução) > Artifacts.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Dependências
+        run: pip install -r requirements.txt
+
+      - name: Testes
+        run: python -m unittest discover -s tests -t .
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Gerar instalador
+        run: python installer/gerar_instalador.py --recompilar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DIGEP_Folha_de_Ponto_Setup
+          path: installer/output/DIGEP_Folha_de_Ponto_Setup.exe
+          if-no-files-found: error

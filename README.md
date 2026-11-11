@@ -120,20 +120,43 @@ Para facilitar a instalação e demonstração em outros computadores (sem preci
 copiar o `.exe` avulso), há um instalador feito com o [Inno Setup](https://jrsoftware.org/isdl.php)
 (gratuito):
 
-1. Gere o executável primeiro (`python build_exe.py`).
-2. Rode `python installer/preparar_tesseract.py`. Ele copia o Tesseract instalado neste
-   computador (só o `tesseract.exe`, as DLLs que ele usa e os idiomas `por`, `eng` e `osd`)
-   para `installer/Tesseract-OCR` e confere se a cópia funciona sozinha. Sem esse passo o
-   instalador é gerado sem OCR.
-3. Instale o Inno Setup no Windows (`winget install JRSoftware.InnoSetup`).
-4. Abra `installer/DIGEP_Setup.iss` no Inno Setup Compiler e clique em **Compile**
-   (ou rode `ISCC installer\DIGEP_Setup.iss` no prompt de comando).
-5. O instalador final é gerado em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`.
+No Windows, dê dois cliques em `installer\gerar_instalador.bat` (ou rode
+`python installer/gerar_instalador.py`). Só precisa do Python e de internet: o script usa o
+`dist/DIGEP_Folha_de_Ponto.exe` do repositório, baixa o Tesseract para `installer/Tesseract-OCR`,
+instala o Inno Setup pelo winget se ele faltar e compila `installer/DIGEP_Setup.iss`. O instalador
+final fica em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`.
+
+Para gerar também o `.exe` a partir do código atual (exige `pip install -r requirements.txt`):
+
+```
+python installer/gerar_instalador.py --recompilar
+```
+
+Outras formas:
+
+- **Sem Windows (Linux/macOS, com Docker e 7-Zip):** `python installer/gerar_instalador.py --docker`
+  usa o `dist/DIGEP_Folha_de_Ponto.exe` do repositório e o Inno Setup de um contêiner.
+- **Pelo GitHub:** em *Actions → Instalador → Run workflow* (ou ao publicar uma tag `v*`), um
+  Windows limpo gera o instalador; baixe-o em *Artifacts*.
+
+O Tesseract é preparado por `installer/preparar_tesseract.py`, que leva só o `tesseract.exe`, as
+DLLs que ele usa e os idiomas `por`, `eng` e `osd`:
+
+- `--baixar` baixa o instalador oficial do Tesseract, confere o SHA-256 e extrai os arquivos com
+  o 7-Zip, sem instalar nada (é o que o `gerar_instalador.py` usa);
+- `--instalar` instala o Tesseract pelo winget se ele não estiver no computador e copia de lá;
+- sem opção, copia o Tesseract já instalado neste computador.
+
+Um idioma que falte é baixado do repositório oficial. Sem a pasta `installer/Tesseract-OCR` a
+compilação do instalador para com erro.
 
 O instalador:
-- leva o Tesseract junto, então o OCR funciona sem instalar mais nada;
-- dá aos usuários permissão de gravação na pasta do sistema (o banco e as folhas ficam ao
-  lado do `.exe`, mesmo em "Arquivos de Programas");
+- instala o Tesseract junto, em `Tesseract-OCR` dentro da pasta do sistema, então o OCR funciona
+  sem instalar mais nada e sem internet;
+- instala só para o usuário atual (em `%LOCALAPPDATA%\Programs`), sem pedir administrador; a TI
+  pode instalar para todos com `/ALLUSERS` na linha de comando;
+- ao final roda a verificação da instalação (`DIGEP_Folha_de_Ponto.exe --verificar`: planilha,
+  geração das folhas, OCR e e-mail) e avisa se algo falhar, com os detalhes em `verificacao.txt`;
 - avisa se o Microsoft Word não estiver instalado (sem ele as folhas saem só em `.docx`);
 - cria atalho no Menu Iniciar (e, opcionalmente, na Área de Trabalho), grava um
   desinstalador em "Adicionar ou remover programas" e, ao final, oferece abrir o app.
