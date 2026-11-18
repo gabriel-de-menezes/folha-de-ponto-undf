@@ -156,3 +156,44 @@ jobs:
             ${{ runner.temp }}/instalacao.log
             ${{ runner.temp }}/interface.png
           if-no-files-found: ignore
+
+  # Instala e verifica num Windows recém-instalado de verdade: um contêiner com a imagem oficial "Windows
+  # Server" da Microsoft, que não tem Python, Visual C++, Office nem nenhum outro programa.
+  windows-novo:
+    needs: instalador
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: installer/testar_windows_novo.ps1
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: DIGEP_Folha_de_Ponto_Setup
+          path: ${{ runner.temp }}/teste
+
+      - name: Instalar e verificar no Windows novo
+        shell: pwsh
+        run: |
+          $teste = "$env:RUNNER_TEMP\teste"
+          Copy-Item installer\testar_windows_novo.ps1 $teste
+          docker pull mcr.microsoft.com/windows/server:ltsc2025
+          docker run --rm -v "${teste}:C:\teste" mcr.microsoft.com/windows/server:ltsc2025 `
+            powershell -NoProfile -ExecutionPolicy Bypass -File C:\teste\testar_windows_novo.ps1 *>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\windows-novo.log"
+          $codigo = $LASTEXITCODE
+          $fim = (Get-Content "$env:RUNNER_TEMP\windows-novo.log" -Tail 30 | ForEach-Object { "$_" -replace '%', '%25' }) -join '%0A'
+          if ($codigo -ne 0) { Write-Output "::error title=Windows novo::$fim"; exit $codigo }
+          Write-Output "::notice title=Windows novo::$fim"
+
+      - name: Resultado no Windows novo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-novo
+          path: |
+            ${{ runner.temp }}/teste/resultado
+            ${{ runner.temp }}/windows-novo.log
+          if-no-files-found: ignore
