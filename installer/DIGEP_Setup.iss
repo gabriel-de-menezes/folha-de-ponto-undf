@@ -30,9 +30,11 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=output
 OutputBaseFilename=DIGEP_Folha_de_Ponto_Setup
-Compression=lzma2/ultra
+; O instalador leva ~700 MB (LibreOffice e Tesseract). "ultra" e varias threads esgotam a memoria do
+; compilador (32 bits): "max" num processo separado compacta quase igual, sem "Out of memory".
+Compression=lzma2/max
 SolidCompression=yes
-LZMANumBlockThreads=4
+LZMAUseSeparateProcess=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
