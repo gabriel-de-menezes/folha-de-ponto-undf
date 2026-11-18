@@ -47,7 +47,7 @@ def testar(pasta):
     soffice = os.path.join(pasta, "program", "soffice.exe")
     raiz = os.path.dirname(AQUI)
     modelo = os.path.join(raiz, "recursos", "Modelo de folha de ponto - Exemplo.docx")
-    with tempfile.TemporaryDirectory() as temporaria:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporaria:
         docx = os.path.join(temporaria, "teste.docx")
         shutil.copy2(modelo, docx)
         perfil = "file:///" + os.path.join(temporaria, "perfil").replace("\\", "/")
@@ -60,7 +60,7 @@ def testar(pasta):
 
 
 def main():
-    with tempfile.TemporaryDirectory() as temporaria:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporaria:
         sete_zip = achar_7zip(temporaria)
         pacote = baixar(URL, os.path.join(temporaria, "libreoffice.paf.exe"), SHA256)
         extraido = os.path.join(temporaria, "extraido")

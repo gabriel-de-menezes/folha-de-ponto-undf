@@ -37,12 +37,25 @@ jobs:
       - name: Inno Setup
         shell: pwsh
         run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
-            choco install innosetup -y --no-progress
-          }
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe", "$env:ProgramFiles\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $iscc) { choco install innosetup -y --no-progress }
+          Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe", "$env:ProgramFiles\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue
 
       - name: Gerar instalador
-        run: python installer/gerar_instalador.py
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
+        run: |
+          $log = "$env:RUNNER_TEMP\gerar.log"
+          python installer/gerar_instalador.py 2>&1 | Tee-Object -FilePath $log
+          $codigo = $LASTEXITCODE
+          if ($codigo -ne 0) {
+            # o fim do log vira uma anotação (visível no resumo da execução, mesmo sem abrir o log)
+            $fim = (Get-Content $log -Tail 40 | ForEach-Object { $_ -replace '%', '%25' }) -join '%0A'
+            Write-Output "::error title=Gerar instalador::$fim"
+            exit $codigo
+          }
 
       - uses: actions/upload-artifact@v4
         with:

@@ -17,6 +17,7 @@ Uso:  python installer/gerar_instalador.py [--sem-recompilar] [--docker]
   --docker          compila o instalador com o Inno Setup de um contêiner Docker (para gerar no Linux/macOS)
 """
 import argparse
+import glob
 import os
 import shutil
 import subprocess
@@ -73,12 +74,12 @@ def achar_iscc():
     for nome in ("ISCC", "iscc"):
         if shutil.which(nome):
             return shutil.which(nome)
+    achados = []
     for base in (os.environ.get("ProgramFiles(x86)", ""), os.environ.get("ProgramFiles", ""),
                  os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
-        exe = os.path.join(base, "Inno Setup 6", "ISCC.exe")
-        if os.path.isfile(exe):
-            return exe
-    return None
+        if base:  # "Inno Setup 6", "Inno Setup 7"...: usa a versão mais nova
+            achados += glob.glob(os.path.join(base, "Inno Setup*", "ISCC.exe"))
+    return sorted(achados)[-1] if achados else None
 
 
 def compilar(docker):

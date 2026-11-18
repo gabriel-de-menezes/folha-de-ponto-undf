@@ -200,7 +200,7 @@ def main():
     modo.add_argument("--baixar", action="store_true",
                       help="baixa o instalador oficial do Tesseract e extrai os arquivos, sem instalar nada")
     opcoes = parser.parse_args()
-    with tempfile.TemporaryDirectory() as temporaria:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporaria:
         if opcoes.baixar:
             origem = baixar_tesseract(temporaria)
         else:
