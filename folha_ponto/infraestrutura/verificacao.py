@@ -1,5 +1,5 @@
 """Verificação da instalação: exercita, numa pasta temporária, cada parte que depende de algo empacotado
-(bibliotecas, modelos, Tesseract) ou externo (Word). Usada por "DIGEP_Folha_de_Ponto.exe --verificar"."""
+(bibliotecas, modelos, Tesseract, LibreOffice) ou do Windows. Usada por "DIGEP_Folha_de_Ponto.exe --verificar"."""
 import os
 import shutil
 import tempfile
@@ -10,6 +10,7 @@ import pymupdf
 
 from .armazenamento import ArmazenamentoLocal
 from .container import montar_servicos
+from .conversor_pdf import ConversorPDF, achar_libreoffice
 from .leitor_folhas import LeitorFolhasTesseract
 
 COMPETENCIA = "FEVEREIRO/2026"
@@ -66,12 +67,29 @@ def verificar_instalacao():
         _etapa(resultados, "Geração das folhas (python-docx)", gerar_folhas)
 
         def converter_pdf():
-            if "r" not in geracao:
+            # Converte pelo LibreOffice mesmo que haja Word: é ele que garante o PDF nos computadores sem Office.
+            if "r" not in geracao or not geracao["r"].itens:
                 raise RuntimeError("a geração das folhas falhou")
-            if geracao["r"].sem_pdf:
-                raise RuntimeError("Microsoft Word não encontrado: as folhas saem só em .docx")
-            return "folhas convertidas pelo Word"
-        _etapa(resultados, "Conversão para PDF (Microsoft Word)", converter_pdf, obrigatoria=False)
+            soffice = achar_libreoffice()
+            if not soffice:
+                raise RuntimeError("LibreOffice não encontrado: sem Microsoft Word, as folhas saem só em .docx. "
+                                   "Reinstale o DIGEP (o instalador traz o LibreOffice na pasta LibreOffice).")
+            docx = os.path.splitext(geracao["r"].itens[0].arquivo)[0] + ".docx"
+            pdf = os.path.join(pasta, "teste_libreoffice.pdf")
+            with ConversorPDF(usar_word=False) as conversor:
+                convertido = conversor.converter(docx, pdf)
+            if not convertido:
+                sistema = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "mfplat.dll")
+                if os.name == "nt" and not os.path.exists(sistema):
+                    raise RuntimeError("o LibreOffice não abre neste Windows por falta dos recursos de mídia "
+                                       "(edição \"N\" do Windows). Instale o \"Media Feature Pack\" em "
+                                       "Configurações > Aplicativos > Recursos opcionais e rode a verificação de novo.")
+                raise RuntimeError(f"o LibreOffice ({soffice}) não converteu a folha em PDF")
+            with pymupdf.open(pdf) as doc:
+                if "REGISTRO DE FREQU" not in doc[0].get_text().upper():
+                    raise RuntimeError("o PDF gerado pelo LibreOffice não tem o conteúdo da folha")
+            return f"folha convertida em PDF pelo LibreOffice ({soffice})"
+        _etapa(resultados, "Conversão para PDF (LibreOffice)", converter_pdf)
 
         def ler_com_ocr():
             leitor = LeitorFolhasTesseract()

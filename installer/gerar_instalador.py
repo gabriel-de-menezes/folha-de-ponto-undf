@@ -1,17 +1,20 @@
 """
-Gera o instalador do DIGEP (installer/output/DIGEP_Folha_de_Ponto_Setup.exe) em um comando só:
+Gera o instalador do DIGEP (installer/output/DIGEP_Folha_de_Ponto_Setup.exe) em um comando só. O instalador
+leva tudo o que o sistema usa, para funcionar num Windows recém-instalado (sem Python, Office nem internet):
 
-  1. garante o executável em dist/ (compila com o PyInstaller se faltar, ou sempre com --recompilar);
+  1. compila o executável a partir do código atual (no Windows), num ambiente Python próprio
+     (installer/.venv-build) com as bibliotecas do requirements.txt;
   2. garante o Tesseract OCR em installer/Tesseract-OCR (baixa o oficial se faltar);
-  3. compila installer/DIGEP_Setup.iss com o Inno Setup (instala-o pelo winget se faltar).
+  3. garante o LibreOffice portátil em installer/LibreOffice (baixa o oficial se faltar): converte as folhas
+     em PDF quando o computador não tem Microsoft Word;
+  4. compila installer/DIGEP_Setup.iss com o Inno Setup (instala-o pelo winget se faltar).
 
-Só precisa do Python: não usa nenhuma biblioteca do projeto, a não ser com --recompilar.
-No Windows, basta dar dois cliques em installer\\gerar_instalador.bat.
+Precisa só do Python 3.11+ e de internet. No Windows, basta dar dois cliques em installer\\gerar_instalador.bat.
 
-Uso:  python installer/gerar_instalador.py [--recompilar] [--docker]
+Uso:  python installer/gerar_instalador.py [--sem-recompilar] [--docker]
 
-  --recompilar   gera de novo o .exe a partir do código (só no Windows, com as dependências instaladas)
-  --docker       compila o instalador com o Inno Setup de um contêiner Docker (para gerar no Linux/macOS)
+  --sem-recompilar  usa o dist/DIGEP_Folha_de_Ponto.exe já existente (fora do Windows é sempre assim)
+  --docker          compila o instalador com o Inno Setup de um contêiner Docker (para gerar no Linux/macOS)
 """
 import argparse
 import os
@@ -23,6 +26,8 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(AQUI)
 EXE = os.path.join(RAIZ, "dist", "DIGEP_Folha_de_Ponto.exe")
 TESSERACT = os.path.join(AQUI, "Tesseract-OCR")
+LIBREOFFICE = os.path.join(AQUI, "LibreOffice", "program", "soffice.exe")
+VENV = os.path.join(AQUI, ".venv-build")
 SAIDA = os.path.join(AQUI, "output", "DIGEP_Folha_de_Ponto_Setup.exe")
 IMAGEM_DOCKER = "amake/innosetup:innosetup6"
 
@@ -33,12 +38,21 @@ def rodar(comando, **opcoes):
         sys.exit(f"Falhou: {' '.join(comando)}")
 
 
+def python_de_build():
+    """Ambiente Python só para compilar o .exe: não depende do que estiver instalado no Python do computador."""
+    python = os.path.join(VENV, "Scripts", "python.exe")
+    if not os.path.isfile(python):
+        rodar([sys.executable, "-m", "venv", VENV])
+        rodar([python, "-m", "pip", "install", "-q", "--upgrade", "pip"])
+    return python
+
+
 def garantir_exe(recompilar):
-    if recompilar or not os.path.isfile(EXE):
-        if os.name != "nt":
-            sys.exit("O .exe só pode ser compilado no Windows (PyInstaller não gera .exe a partir do Linux). "
-                     "Use o dist/DIGEP_Folha_de_Ponto.exe do repositório ou rode este script no Windows.")
-        rodar([sys.executable, "build_exe.py"], cwd=RAIZ)
+    if os.name != "nt":
+        recompilar = False  # o PyInstaller não gera .exe a partir do Linux/macOS
+        print("Fora do Windows: usando o dist/DIGEP_Folha_de_Ponto.exe do repositório, sem recompilar.")
+    if recompilar:
+        rodar([python_de_build(), "build_exe.py"], cwd=RAIZ)
     if not os.path.isfile(EXE):
         sys.exit(f"Executável não encontrado: {EXE}")
 
@@ -47,6 +61,12 @@ def garantir_tesseract():
     if os.path.isfile(os.path.join(TESSERACT, "tesseract.exe")):
         return
     rodar([sys.executable, os.path.join(AQUI, "preparar_tesseract.py"), "--baixar"])
+
+
+def garantir_libreoffice():
+    if os.path.isfile(LIBREOFFICE):
+        return
+    rodar([sys.executable, os.path.join(AQUI, "preparar_libreoffice.py")])
 
 
 def achar_iscc():
@@ -79,11 +99,13 @@ def compilar(docker):
 
 def main():
     parser = argparse.ArgumentParser(description="Gera o instalador do DIGEP.")
-    parser.add_argument("--recompilar", action="store_true", help="gera de novo o .exe a partir do código")
+    parser.add_argument("--sem-recompilar", action="store_true", help="usa o dist/DIGEP_Folha_de_Ponto.exe existente")
+    parser.add_argument("--recompilar", action="store_true", help=argparse.SUPPRESS)  # padrão; mantido por compatibilidade
     parser.add_argument("--docker", action="store_true", help="compila com o Inno Setup de um contêiner Docker")
     opcoes = parser.parse_args()
-    garantir_exe(opcoes.recompilar)
+    garantir_exe(not opcoes.sem_recompilar)
     garantir_tesseract()
+    garantir_libreoffice()
     compilar(opcoes.docker)
     if not os.path.isfile(SAIDA):
         sys.exit(f"O Inno Setup terminou, mas o instalador não apareceu em {SAIDA}")

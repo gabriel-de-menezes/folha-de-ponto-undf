@@ -70,7 +70,7 @@ class GerarFolhas:
 
         geradas = len(servidores) - len(erros)
         self.auditoria.evento(op_id, f"Folhas geradas a partir do modelo institucional: {geradas} de {len(servidores)}"
-                              + (f" ({resultado.sem_pdf} só em Word, sem conversor PDF)" if resultado.sem_pdf else "")
+                              + (f" ({resultado.sem_pdf} só em Word: a conversão para PDF falhou)" if resultado.sem_pdf else "")
                               + f". Pasta: {self.armazenamento.pasta_geradas(competencia)}")
         for erro in erros:
             self.auditoria.evento(op_id, f"Erro ao gerar folha — {erro}")

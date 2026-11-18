@@ -134,14 +134,27 @@ class GeradorFolhasDocx:
         """-> ({servidor_id: (docx, pdf ou None)}, erros)"""
         pasta = self.armazenamento.pasta_geradas(competencia)
         arquivos, erros = {}, []
-        with ConversorPDF() as conversor:
-            for n, s in enumerate(servidores):
-                progresso(n, len(servidores), f"Gerando folha de {s.nome}")
-                base = os.path.join(pasta, f"Folha_{nome_arquivo_seguro(s.matricula)}_{nome_arquivo_seguro(s.nome)}")
-                try:
-                    preencher_folha(self.armazenamento.modelo_folha, s, competencia, base + ".docx", datas_especiais)
-                    pdf_ok = conversor.converter(base + ".docx", base + ".pdf")
-                    arquivos[s.id] = (base + ".docx", base + ".pdf" if pdf_ok else None)
-                except Exception as e:
-                    erros.append(f"{s.nome}: {e}")
+        total = len(servidores)
+        # 1ª metade da barra: preencher os .docx; 2ª metade: converter em PDF (em lotes, no LibreOffice)
+        for n, s in enumerate(servidores):
+            progresso(n, 2 * total, f"Gerando folha de {s.nome}")
+            base = os.path.join(pasta, f"Folha_{nome_arquivo_seguro(s.matricula)}_{nome_arquivo_seguro(s.nome)}")
+            try:
+                preencher_folha(self.armazenamento.modelo_folha, s, competencia, base + ".docx", datas_especiais)
+                arquivos[s.id] = base
+            except Exception as e:
+                erros.append(f"{s.nome}: {e}")
+        ids = list(arquivos)
+        progresso(total, 2 * total, "Convertendo as folhas em PDF…")
+        try:
+            with ConversorPDF() as conversor:
+                oks = conversor.converter_lote(
+                    [(arquivos[i] + ".docx", arquivos[i] + ".pdf") for i in ids],
+                    lambda feitos, _: progresso(total + feitos, 2 * total,
+                                                f"Convertendo as folhas em PDF ({feitos} de {len(ids)})…"))
+        except Exception:  # sem PDF as folhas continuam valendo em .docx
+            oks = [False] * len(ids)
+        for i, pdf_ok in zip(ids, oks):
+            base = arquivos[i]
+            arquivos[i] = (base + ".docx", base + ".pdf" if pdf_ok else None)
         return arquivos, erros

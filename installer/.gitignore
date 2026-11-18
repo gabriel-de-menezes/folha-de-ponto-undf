@@ -1,2 +1,4 @@
 output/
 Tesseract-OCR/
+LibreOffice/
+.venv-build/

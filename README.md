@@ -8,6 +8,11 @@ servidores que acumulam cargo — conforme os requisitos RF01–RF12 do projeto.
 
 ## Instalação
 
+**Nos computadores da DIGEP, use o instalador** (`DIGEP_Folha_de_Ponto_Setup.exe`, veja
+"Gerando o instalador"): ele traz tudo o que o sistema usa — o programa, o Tesseract (OCR) e o
+LibreOffice (PDF) — e funciona num Windows 10/11 recém-instalado, sem Python, Office nem internet.
+Os passos abaixo são para rodar a partir do código-fonte, em desenvolvimento:
+
 1. Python 3.11+ instalado.
 2. Instale as dependências:
    ```
@@ -18,7 +23,9 @@ servidores que acumulam cargo — conforme os requisitos RF01–RF12 do projeto.
    Windows (de preferência marcando o idioma *Portuguese*). O app encontra o
    `tesseract.exe` na pasta padrão de instalação automaticamente. Sem Tesseract,
    as digitalizações continuam sendo aceitas — o servidor é indicado na conferência.
-4. (Opcional) Microsoft Word ou LibreOffice para gerar as folhas também em PDF.
+4. (Opcional) Microsoft Word ou LibreOffice para gerar as folhas também em PDF. O app usa o Word,
+   se houver; senão, o LibreOffice da pasta `LibreOffice` ao lado do app (a que o instalador leva)
+   ou um instalado no computador.
 
 ## Executando
 
@@ -99,12 +106,11 @@ anterior é preservada como `Nome_do_Servidor-AAAA-MM_OLD_AAAAMMDD-HHMMSS.pdf`.
 
 ## Uso em pasta de rede (modo portátil)
 
-Copie o `.exe` (e, opcionalmente, a pasta `Tesseract-OCR` para OCR sem instalação) para
+Copie o `.exe` e as pastas `Tesseract-OCR` (OCR) e `LibreOffice` (PDF) de uma instalação para
 uma pasta compartilhada: banco, folhas e relatórios ficam **ao lado do executável**.
 Não há login. Um arquivo `folha_ponto.lock` avisa "Sistema em uso por outro usuário"
 quando uma segunda pessoa abre o sistema ao mesmo tempo (expira sozinho se o
-programa fechar de forma abrupta). A geração de PDF depende do Word instalado em cada
-computador; sem ele, as folhas são geradas em `.docx`.
+programa fechar de forma abrupta).
 
 ## Gerando o executável (.exe)
 
@@ -121,21 +127,23 @@ copiar o `.exe` avulso), há um instalador feito com o [Inno Setup](https://jrso
 (gratuito):
 
 No Windows, dê dois cliques em `installer\gerar_instalador.bat` (ou rode
-`python installer/gerar_instalador.py`). Só precisa do Python e de internet: o script usa o
-`dist/DIGEP_Folha_de_Ponto.exe` do repositório, baixa o Tesseract para `installer/Tesseract-OCR`,
-instala o Inno Setup pelo winget se ele faltar e compila `installer/DIGEP_Setup.iss`. O instalador
-final fica em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`.
+`python installer/gerar_instalador.py`). Só precisa do Python 3.11+ e de internet. O script:
 
-Para gerar também o `.exe` a partir do código atual (exige `pip install -r requirements.txt`):
+1. compila o `.exe` a partir do código atual, num ambiente Python próprio (`installer/.venv-build`)
+   com as bibliotecas do `requirements.txt`;
+2. baixa o Tesseract para `installer/Tesseract-OCR` (`preparar_tesseract.py`);
+3. baixa o LibreOffice portátil para `installer/LibreOffice` (`preparar_libreoffice.py`);
+4. instala o Inno Setup pelo winget, se ele faltar, e compila `installer/DIGEP_Setup.iss`.
 
-```
-python installer/gerar_instalador.py --recompilar
-```
+O instalador final fica em `installer/output/DIGEP_Folha_de_Ponto_Setup.exe`. Os downloads ficam
+guardados nessas pastas: na próxima vez só o `.exe` é recompilado. Para usar o
+`dist/DIGEP_Folha_de_Ponto.exe` existente sem recompilar: `--sem-recompilar`.
 
 Outras formas:
 
 - **Sem Windows (Linux/macOS, com Docker e 7-Zip):** `python installer/gerar_instalador.py --docker`
-  usa o `dist/DIGEP_Folha_de_Ponto.exe` do repositório e o Inno Setup de um contêiner.
+  usa o `dist/DIGEP_Folha_de_Ponto.exe` do repositório (sem recompilar: confira se ele está
+  atualizado) e o Inno Setup de um contêiner.
 - **Pelo GitHub:** em *Actions → Instalador → Run workflow* (ou ao publicar uma tag `v*`), um
   Windows limpo gera o instalador; baixe-o em *Artifacts*.
 
@@ -148,17 +156,23 @@ DLLs que ele usa e os idiomas `por`, `eng` e `osd`:
 - `--instalar` instala o Tesseract pelo winget se ele não estiver no computador e copia de lá;
 - sem opção, copia o Tesseract já instalado neste computador.
 
-Um idioma que falte é baixado do repositório oficial. Sem a pasta `installer/Tesseract-OCR` a
-compilação do instalador para com erro.
+Um idioma que falte é baixado do repositório oficial.
+
+O LibreOffice é preparado por `installer/preparar_libreoffice.py`: baixa o LibreOffice Portable
+oficial (The Document Foundation), confere o SHA-256, extrai com o 7-Zip e tira o que a conversão
+para PDF não usa (ajuda, dicionários, telas em outros idiomas). Ele já traz o runtime do Visual C++.
+
+Sem as pastas `installer/Tesseract-OCR` e `installer/LibreOffice` a compilação do instalador para
+com erro: o instalador sempre leva tudo.
 
 O instalador:
-- instala o Tesseract junto, em `Tesseract-OCR` dentro da pasta do sistema, então o OCR funciona
-  sem instalar mais nada e sem internet;
+- instala o Tesseract (pasta `Tesseract-OCR`) e o LibreOffice (pasta `LibreOffice`) junto com o
+  programa, então OCR e PDF funcionam sem instalar mais nada e sem internet; o Word, se houver,
+  continua sendo usado para o PDF;
 - instala só para o usuário atual (em `%LOCALAPPDATA%\Programs`), sem pedir administrador; a TI
   pode instalar para todos com `/ALLUSERS` na linha de comando;
 - ao final roda a verificação da instalação (`DIGEP_Folha_de_Ponto.exe --verificar`: planilha,
-  geração das folhas, OCR e e-mail) e avisa se algo falhar, com os detalhes em `verificacao.txt`;
-- avisa se o Microsoft Word não estiver instalado (sem ele as folhas saem só em `.docx`);
+  geração das folhas, PDF, OCR e e-mail) e avisa se algo falhar, com os detalhes em `verificacao.txt`;
 - cria atalho no Menu Iniciar (e, opcionalmente, na Área de Trabalho), grava um
   desinstalador em "Adicionar ou remover programas" e, ao final, oferece abrir o app.
 
@@ -166,6 +180,13 @@ Ao desinstalar, o banco de dados e as folhas são mantidos na pasta.
 
 Para testar num Windows limpo, use a Área Restrita do Windows (Windows Sandbox): ela não tem
 Python, Tesseract nem Office, como os computadores da DIGEP.
+
+O que continua fora do instalador, por depender de cada computador ou conta:
+- envio pela opção **MS Outlook**, que usa o Outlook instalado e configurado (a opção **SMTP**
+  não precisa de nada instalado);
+- nas edições "N" do Windows (sem recursos de mídia), o LibreOffice só abre depois de instalar o
+  *Media Feature Pack* (Configurações → Aplicativos → Recursos opcionais); a verificação da
+  instalação avisa quando for o caso.
 
 ## Testes
 

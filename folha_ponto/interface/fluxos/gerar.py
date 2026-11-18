@@ -123,7 +123,7 @@ class FluxoGerar(Fluxo):
             if resultado.erros:
                 messagebox.showwarning("Gerar folhas", "Algumas folhas não foram geradas:\n" + "\n".join(resultado.erros[:10]))
             if resultado.sem_pdf:
-                self.app.notificar("Folhas geradas em Word — instale o Microsoft Word ou LibreOffice para gerar em PDF.", "aviso")
+                self.app.notificar("Algumas folhas saíram só em Word: a conversão para PDF falhou. Use “Verificar instalação do DIGEP” no Menu Iniciar.", "aviso")
             else:
                 self.app.notificar(f"{len(resultado.itens)} folha(s) de {rotulo_competencia(competencia)} gerada(s).")
             self.ir_para(1)

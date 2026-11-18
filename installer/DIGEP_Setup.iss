@@ -4,16 +4,21 @@
 ; "python installer\gerar_instalador.py"). Ele faz os passos abaixo sozinho:
 ;   1. Usa o dist\DIGEP_Folha_de_Ponto.exe (gerado por "python build_exe.py").
 ;   2. Roda "python installer\preparar_tesseract.py --baixar", que baixa o Tesseract OCR oficial para
-;      installer\Tesseract-OCR, para o instalador leva-lo junto. Sem essa pasta a compilacao para com erro.
-;   3. Instala o Inno Setup pelo winget, se faltar (https://jrsoftware.org/isdl.php).
-;   4. Compila este arquivo ("ISCC installer\DIGEP_Setup.iss").
-;   5. O instalador final fica em installer\output\DIGEP_Folha_de_Ponto_Setup.exe.
+;      installer\Tesseract-OCR (leitura das folhas escaneadas).
+;   3. Roda "python installer\preparar_libreoffice.py", que baixa o LibreOffice portatil oficial para
+;      installer\LibreOffice (conversao das folhas em PDF sem Microsoft Word).
+;      Sem essas duas pastas a compilacao para com erro: o instalador sempre leva tudo o que o sistema usa,
+;      para funcionar num Windows recem-instalado, sem Python, Office nem internet.
+;   4. Instala o Inno Setup pelo winget, se faltar (https://jrsoftware.org/isdl.php).
+;   5. Compila este arquivo ("ISCC installer\DIGEP_Setup.iss").
+;   6. O instalador final fica em installer\output\DIGEP_Folha_de_Ponto_Setup.exe.
 
 #define MyAppName "DIGEP - Folha de Ponto"
 #define MyAppVersion "1.1.0"
 #define MyAppPublisher "DIGEP - UnDF"
 #define MyAppExeName "DIGEP_Folha_de_Ponto.exe"
 #define ComTesseract DirExists(AddBackslash(SourcePath) + "Tesseract-OCR")
+#define ComLibreOffice FileExists(AddBackslash(SourcePath) + "LibreOffice\program\soffice.exe")
 
 [Setup]
 AppId={{B39F2C2E-6E7C-4B7F-9C2E-6C1E4C0F5A11}
@@ -27,6 +32,7 @@ OutputDir=output
 OutputBaseFilename=DIGEP_Folha_de_Ponto_Setup
 Compression=lzma2/ultra
 SolidCompression=yes
+LZMANumBlockThreads=4
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -50,6 +56,12 @@ Name: "desktopicon"; Description: "Criar um atalho na Área de Trabalho"; GroupD
 ; nao pode gravar, entao a pasta do sistema recebe permissao de modificacao para os usuarios.
 Name: "{app}"; Permissions: users-modify
 
+[InstallDelete]
+; Numa atualizacao, tira as copias antigas do Tesseract e do LibreOffice antes de gravar as novas
+; (sem misturar arquivos de versoes diferentes). O banco e as folhas nao sao tocados.
+Type: filesandordirs; Name: "{app}\Tesseract-OCR"
+Type: filesandordirs; Name: "{app}\LibreOffice"
+
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
@@ -57,6 +69,11 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "Tesseract-OCR\*"; DestDir: "{app}\Tesseract-OCR"; Flags: ignoreversion recursesubdirs createallsubdirs
 #else
   #error "installer\Tesseract-OCR nao encontrado: rode python installer\gerar_instalador.py (ou python installer\preparar_tesseract.py --baixar) antes de compilar."
+#endif
+#if ComLibreOffice
+Source: "LibreOffice\*"; DestDir: "{app}\LibreOffice"; Flags: ignoreversion recursesubdirs createallsubdirs
+#else
+  #error "installer\LibreOffice nao encontrado: rode python installer\gerar_instalador.py (ou python installer\preparar_libreoffice.py) antes de compilar."
 #endif
 
 [Icons]
@@ -69,13 +86,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// O Word converte as folhas geradas em PDF. Ele nao pode ir no instalador, entao avisamos se faltar.
-function WordInstalado: Boolean;
-begin
-  Result := RegKeyExists(HKEY_CLASSES_ROOT, 'Word.Application\CLSID');
-end;
-
-// Roda o próprio DIGEP em modo de verificação (planilha, geração das folhas, OCR, e-mail) numa pasta temporária.
+// Roda o próprio DIGEP em modo de verificação (planilha, geração das folhas, PDF, OCR, e-mail) numa pasta
+// temporária. O PDF sai pelo Word, se houver, ou pelo LibreOffice que vai junto.
 procedure VerificarInstalacao;
 var
   Codigo: Integer;
@@ -93,9 +105,4 @@ begin
   if CurStep <> ssPostInstall then
     exit;
   VerificarInstalacao;
-  if not WordInstalado then
-    SuppressibleMsgBox('O Microsoft Word não foi encontrado neste computador.' + #13#10#13#10 +
-      'O DIGEP funciona normalmente, mas as folhas de ponto geradas sairão apenas em Word (.docx), ' +
-      'sem a versão em PDF. Para gerar os PDFs, instale o Microsoft Word.',
-      mbInformation, MB_OK, IDOK);
 end;

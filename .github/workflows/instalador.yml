@@ -1,28 +1,38 @@
 name: Instalador
 
-# Gera o instalador completo (app + Tesseract OCR) em um Windows limpo do GitHub.
-# Baixe o resultado em Actions > Instalador > (execução) > Artifacts.
+# Gera o instalador completo (app + Tesseract OCR + LibreOffice) numa VM Windows limpa do GitHub, instala-o
+# como um usuário faria e roda a verificação da instalação (planilha, geração das folhas, PDF, OCR, e-mail).
+# A VM não tem Microsoft Office nem Tesseract: o que funcionar aqui veio do instalador.
+# Baixe o instalador em Actions > Instalador > (execução) > Artifacts.
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
+    paths:
+      - "folha_ponto/**"
+      - "installer/**"
+      - "recursos/**"
+      - "main.py"
+      - "build_exe.py"
+      - "requirements.txt"
+      - ".github/workflows/instalador.yml"
 
 jobs:
   instalador:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: pip
-
-      - name: Dependências
-        run: pip install -r requirements.txt
 
       - name: Testes
-        run: python -m unittest discover -s tests -t .
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -t .
 
       - name: Inno Setup
         shell: pwsh
@@ -32,10 +42,48 @@ jobs:
           }
 
       - name: Gerar instalador
-        run: python installer/gerar_instalador.py --recompilar
+        run: python installer/gerar_instalador.py
 
       - uses: actions/upload-artifact@v4
         with:
           name: DIGEP_Folha_de_Ponto_Setup
           path: installer/output/DIGEP_Folha_de_Ponto_Setup.exe
           if-no-files-found: error
+
+      - name: Instalar como um usuário
+        shell: pwsh
+        run: |
+          $destino = "$env:RUNNER_TEMP\DIGEP"
+          $p = Start-Process installer\output\DIGEP_Folha_de_Ponto_Setup.exe -Wait -PassThru `
+               -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=`"$destino`"", "/LOG=`"$env:RUNNER_TEMP\instalacao.log`""
+          Get-Content "$env:RUNNER_TEMP\instalacao.log" -Tail 30
+          if ($p.ExitCode -ne 0) { throw "Instalador terminou com código $($p.ExitCode)" }
+          foreach ($f in "DIGEP_Folha_de_Ponto.exe", "Tesseract-OCR\tesseract.exe", "Tesseract-OCR\tessdata\por.traineddata", "LibreOffice\program\soffice.exe") {
+            if (-not (Test-Path "$destino\$f")) { throw "Faltou no instalado: $f" }
+          }
+          "DESTINO=$destino" >> $env:GITHUB_ENV
+
+      - name: Verificar a instalação (só com o que o instalador colocou)
+        shell: pwsh
+        run: |
+          # PATH só com o Windows: sem o Python, o 7-Zip e as ferramentas do runner
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
+          Remove-Item Env:TESSDATA_PREFIX -ErrorAction SilentlyContinue
+          $relatorio = "$env:RUNNER_TEMP\verificacao.txt"
+          $p = Start-Process "$env:DESTINO\DIGEP_Folha_de_Ponto.exe" -Wait -PassThru `
+               -ArgumentList "--verificar", "`"$relatorio`"", "--silencioso"
+          Get-Content $relatorio
+          if ($p.ExitCode -ne 0) { throw "A verificação da instalação falhou (código $($p.ExitCode))" }
+          if (Select-String -Path $relatorio -Pattern "^\[(FALHA|AVISO)\]") { throw "A verificação apontou problemas" }
+          $libre = [regex]::Escape("$env:DESTINO\LibreOffice")
+          if (-not (Select-String -Path $relatorio -Pattern "pelo LibreOffice \($libre")) { throw "O PDF não foi gerado pelo LibreOffice embutido" }
+
+      - name: Relatório da verificação
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verificacao
+          path: |
+            ${{ runner.temp }}/verificacao.txt
+            ${{ runner.temp }}/instalacao.log
+          if-no-files-found: ignore
