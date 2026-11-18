@@ -71,6 +71,32 @@ class TestInstalacao(unittest.TestCase):
         self.assertTrue(all(c[1].startswith("-env:UserInstallation=file:") for c in chamadas))
         self.assertEqual(progresso[-1], (len(pares), len(pares)))
 
+    def test_substitutas_do_media_foundation(self):
+        """DLLs x64 válidas, com as funções que o LibreOffice importa, todas devolvendo E_NOTIMPL."""
+        import importlib.util
+        import struct
+        import pefile
+        caminho = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "installer", "gerar_media_foundation.py")
+        spec = importlib.util.spec_from_file_location("gerar_media_foundation", caminho)
+        mf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mf)
+        geradas = mf.gerar(self.pasta)
+        self.assertEqual(sorted(map(os.path.basename, geradas)), sorted(mf.EXPORTACOES))
+        codigo = b"\xB8" + struct.pack("<I", mf.E_NOTIMPL) + b"\xC3"
+        for arquivo in geradas:
+            pe = pefile.PE(arquivo)
+            self.assertTrue(pe.is_dll())
+            self.assertEqual(pe.FILE_HEADER.Machine, 0x8664)
+            self.assertEqual(pe.DIRECTORY_ENTRY_EXPORT.struct.Name and pe.get_string_at_rva(
+                pe.DIRECTORY_ENTRY_EXPORT.struct.Name).decode(), os.path.basename(arquivo))
+            simbolos = {e.name.decode(): e.address for e in pe.DIRECTORY_ENTRY_EXPORT.symbols}
+            self.assertEqual(sorted(simbolos), sorted(mf.EXPORTACOES[os.path.basename(arquivo)]))
+            for endereco in simbolos.values():
+                self.assertEqual(pe.get_data(endereco, len(codigo)), codigo)
+            self.assertFalse(hasattr(pe, "DIRECTORY_ENTRY_IMPORT"))  # não depende de nenhuma DLL
+            self.assertEqual(len(pe.DIRECTORY_ENTRY_BASERELOC), 1)
+
     def test_sem_permissao_de_escrita_explica_o_que_fazer(self):
         for erro in (sqlite3.OperationalError("unable to open database file"), PermissionError("acesso negado")):
             texto = mensagem_falha_ao_abrir(erro, r"C:\Program Files\DIGEP Folha de Ponto")

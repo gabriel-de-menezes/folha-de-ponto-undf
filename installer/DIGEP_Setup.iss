@@ -6,7 +6,8 @@
 ;   2. Roda "python installer\preparar_tesseract.py --baixar", que baixa o Tesseract OCR oficial para
 ;      installer\Tesseract-OCR (leitura das folhas escaneadas).
 ;   3. Roda "python installer\preparar_libreoffice.py", que baixa o LibreOffice portatil oficial para
-;      installer\LibreOffice (conversao das folhas em PDF sem Microsoft Word).
+;      installer\LibreOffice (conversao das folhas em PDF sem Microsoft Word), e
+;      "python installer\gerar_media_foundation.py" (substitutas do Media Foundation para as edicoes "N").
 ;      Sem essas duas pastas a compilacao para com erro: o instalador sempre leva tudo o que o sistema usa,
 ;      para funcionar num Windows recem-instalado, sem Python, Office nem internet.
 ;   4. Instala o Inno Setup pelo winget, se faltar (https://jrsoftware.org/isdl.php).
@@ -19,6 +20,7 @@
 #define MyAppExeName "DIGEP_Folha_de_Ponto.exe"
 #define ComTesseract DirExists(AddBackslash(SourcePath) + "Tesseract-OCR")
 #define ComLibreOffice FileExists(AddBackslash(SourcePath) + "LibreOffice\program\soffice.exe")
+#define ComMediaFoundation FileExists(AddBackslash(SourcePath) + "MediaFoundation\mfplat.dll")
 
 [Setup]
 AppId={{B39F2C2E-6E7C-4B7F-9C2E-6C1E4C0F5A11}
@@ -77,6 +79,13 @@ Source: "LibreOffice\*"; DestDir: "{app}\LibreOffice"; Flags: ignoreversion recu
 #else
   #error "installer\LibreOffice nao encontrado: rode python installer\gerar_instalador.py (ou python installer\preparar_libreoffice.py) antes de compilar."
 #endif
+; Edicoes "N" do Windows vem sem Media Foundation, e sem ele o LibreOffice nao abre. Nelas (e so nelas)
+; vao substitutas que so respondem "nao implementado" (o LibreOffice as usa so para tocar midia).
+#if ComMediaFoundation
+Source: "MediaFoundation\*.dll"; DestDir: "{app}\LibreOffice\program"; Flags: ignoreversion; Check: SemMediaFoundation
+#else
+  #error "installer\MediaFoundation nao encontrado: rode python installer\gerar_instalador.py (ou python installer\gerar_media_foundation.py) antes de compilar."
+#endif
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -88,6 +97,12 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+// Windows sem Media Foundation (edicao "N" sem o Media Feature Pack)
+function SemMediaFoundation: Boolean;
+begin
+  Result := not FileExists(ExpandConstant('{sys}\mfplat.dll'));
+end;
+
 // Roda o próprio DIGEP em modo de verificação (planilha, geração das folhas, PDF, OCR, e-mail) numa pasta
 // temporária. O PDF sai pelo Word, se houver, ou pelo LibreOffice que vai junto.
 procedure VerificarInstalacao;

@@ -34,7 +34,7 @@ WINDOWS = {
     "setupapi", "shcore", "shell32", "shlwapi", "sspicli", "ucrtbase", "urlmon", "user32", "userenv",
     "usp10", "uxtheme", "version", "wer", "winhttp", "wininet", "winmm", "winspool.drv", "wintrust",
     "wldap32", "ws2_32", "wsock32", "wtsapi32", "xmllite", "comsvcs", "dsound", "dinput8", "msdmo",
-    "mfplat", "mfplay", "mfreadwrite",  # Media Foundation: falta só nas edições "N" (ver README)
+    "mfplat", "mfplay", "mfreadwrite",  # Media Foundation: nas edições "N" vão as substitutas do instalador
     "winhttp", "websocket", "windowscodecs", "wevtapi", "ntmarta", "sxs", "tdh", "virtdisk", "wsnmp32",
     "activeds",  # Active Directory Service Interfaces
     "fontsub",   # subconjunto de fontes (exportação PDF)
@@ -112,7 +112,8 @@ def main():
         print("\n".join("  " + p for p in problemas))
         sys.exit(1)
     print(f"\nOK: tudo o que o instalador leva usa só DLLs do próprio pacote ou do Windows 10/11 "
-          f"(Media Foundation — {', '.join(sorted(EDICAO_N))} — falta só nas edições \"N\").")
+          f"(Media Foundation — {', '.join(sorted(EDICAO_N))}: nas edições \"N\", que não o têm, o instalador "
+          f"leva substitutas).")
 
 
 if __name__ == "__main__":

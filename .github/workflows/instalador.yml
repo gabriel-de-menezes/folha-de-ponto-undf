@@ -105,6 +105,18 @@ jobs:
           if ($codigo -ne 0) { Write-Output "::error title=Dependências::$texto"; exit $codigo }
           Write-Output "::notice title=Dependências::$texto"
 
+      - name: Simular Windows edição "N" (sem Media Foundation)
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          $saida = python installer/testar_media_foundation.py "$env:DESTINO" 2>&1
+          $saida
+          $codigo = $LASTEXITCODE
+          $texto = ($saida | ForEach-Object { "$_" -replace '%', '%25' }) -join '%0A'
+          if ($codigo -ne 0) { Write-Output "::error title=Edição N::$texto"; exit $codigo }
+          Write-Output "::notice title=Edição N::$texto"
+
       - name: Abrir a interface
         shell: pwsh
         run: |

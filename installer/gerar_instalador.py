@@ -65,9 +65,10 @@ def garantir_tesseract():
 
 
 def garantir_libreoffice():
-    if os.path.isfile(LIBREOFFICE):
-        return
-    rodar([sys.executable, os.path.join(AQUI, "preparar_libreoffice.py")])
+    if not os.path.isfile(LIBREOFFICE):
+        rodar([sys.executable, os.path.join(AQUI, "preparar_libreoffice.py")])
+    # substitutas do Media Foundation para as edições "N" do Windows (geradas em instantes, sem download)
+    rodar([sys.executable, os.path.join(AQUI, "gerar_media_foundation.py")])
 
 
 def achar_iscc():

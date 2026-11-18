@@ -186,12 +186,14 @@ nem Tesseract, gera o instalador, instala-o, roda a verificação da instalaçã
 confere com `installer/conferir_dependencias.py` que toda DLL usada pelo programa, pelo Tesseract e
 pelo LibreOffice vem no próprio pacote ou no Windows 10/11 (nada do que a VM tem instalado a mais).
 
-O que continua fora do instalador, por depender de cada computador ou conta:
-- envio pela opção **MS Outlook**, que usa o Outlook instalado e configurado (a opção **SMTP**
-  não precisa de nada instalado);
-- nas edições "N" do Windows (sem recursos de mídia), o LibreOffice só abre depois de instalar o
-  *Media Feature Pack* (Configurações → Aplicativos → Recursos opcionais); a verificação da
-  instalação avisa quando for o caso.
+O único recurso que depende de algo fora do instalador é o envio pela opção **MS Outlook**, que
+usa o Outlook instalado e configurado do usuário. A opção **SMTP** não precisa de nada instalado.
+
+Nas edições "N" do Windows (sem os recursos de mídia, o *Media Foundation*), o LibreOffice não
+abriria. Nelas, e só nelas, o instalador coloca na pasta do LibreOffice substitutas de `mfplat.dll`,
+`mfplay.dll` e `mfreadwrite.dll` geradas por `installer/gerar_media_foundation.py`. Elas exportam as
+6 funções que o LibreOffice importa, mas só respondem "não implementado", porque o LibreOffice só as
+usa para tocar mídia. O workflow simula esse caso com `installer/testar_media_foundation.py`.
 
 ## Testes
 

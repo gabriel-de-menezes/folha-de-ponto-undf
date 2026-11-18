@@ -80,10 +80,12 @@ def verificar_instalacao():
                 convertido = conversor.converter(docx, pdf)
             if not convertido:
                 sistema = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "mfplat.dll")
-                if os.name == "nt" and not os.path.exists(sistema):
-                    raise RuntimeError("o LibreOffice não abre neste Windows por falta dos recursos de mídia "
-                                       "(edição \"N\" do Windows). Instale o \"Media Feature Pack\" em "
-                                       "Configurações > Aplicativos > Recursos opcionais e rode a verificação de novo.")
+                substituta = os.path.join(os.path.dirname(soffice), "mfplat.dll")
+                if os.name == "nt" and not os.path.exists(sistema) and not os.path.exists(substituta):
+                    raise RuntimeError("este Windows não tem os recursos de mídia (edição \"N\") e faltam as "
+                                       "substitutas que o instalador coloca na pasta do LibreOffice. Reinstale o "
+                                       "DIGEP ou instale o \"Media Feature Pack\" (Configurações > Aplicativos > "
+                                       "Recursos opcionais) e rode a verificação de novo.")
                 raise RuntimeError(f"o LibreOffice ({soffice}) não converteu a folha em PDF")
             with pymupdf.open(pdf) as doc:
                 if "REGISTRO DE FREQU" not in doc[0].get_text().upper():
