@@ -181,6 +181,11 @@ Ao desinstalar, o banco de dados e as folhas são mantidos na pasta.
 Para testar num Windows limpo, use a Área Restrita do Windows (Windows Sandbox): ela não tem
 Python, Tesseract nem Office, como os computadores da DIGEP.
 
+O workflow `.github/workflows/instalador.yml` faz esse teste a cada push: numa VM Windows sem Office
+nem Tesseract, gera o instalador, instala-o, roda a verificação da instalação, abre a interface e
+confere com `installer/conferir_dependencias.py` que toda DLL usada pelo programa, pelo Tesseract e
+pelo LibreOffice vem no próprio pacote ou no Windows 10/11 (nada do que a VM tem instalado a mais).
+
 O que continua fora do instalador, por depender de cada computador ou conta:
 - envio pela opção **MS Outlook**, que usa o Outlook instalado e configurado (a opção **SMTP**
   não precisa de nada instalado);

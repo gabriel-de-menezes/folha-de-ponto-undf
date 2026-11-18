@@ -91,6 +91,49 @@ jobs:
           $libre = [regex]::Escape("$env:DESTINO\LibreOffice")
           if (-not (Select-String -Path $relatorio -Pattern "pelo LibreOffice \($libre")) { throw "O PDF não foi gerado pelo LibreOffice embutido" }
 
+      - name: Conferir que nada depende de algo de fora do Windows
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          # Toda DLL que o .exe, o Tesseract e o LibreOffice instalados importam tem de estar no pacote ou no
+          # Windows 10/11: o runtime do Visual C++ e afins desta VM não existem num Windows novo.
+          $saida = python installer/conferir_dependencias.py "$env:DESTINO" 2>&1
+          $saida
+          $codigo = $LASTEXITCODE
+          $texto = ($saida | ForEach-Object { "$_" -replace '%', '%25' }) -join '%0A'
+          if ($codigo -ne 0) { Write-Output "::error title=Dependências::$texto"; exit $codigo }
+          Write-Output "::notice title=Dependências::$texto"
+
+      - name: Abrir a interface
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
+          Start-Process "$env:DESTINO\DIGEP_Folha_de_Ponto.exe" -WorkingDirectory $env:DESTINO
+          # o .exe do PyInstaller abre o programa num processo filho: procura a janela em qualquer um deles
+          $janela = $null
+          for ($i = 0; $i -lt 90 -and -not $janela; $i++) {
+            Start-Sleep -Seconds 1
+            $janela = Get-Process -Name DIGEP_Folha_de_Ponto -ErrorAction SilentlyContinue |
+                      Where-Object { $_.MainWindowTitle -like "*(UnDF)*" } | Select-Object -First 1
+            $erro = Get-Process -Name DIGEP_Folha_de_Ponto -ErrorAction SilentlyContinue |
+                    Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle -notlike "*(UnDF)*" } | Select-Object -First 1
+            if ($erro) { throw "Abriu uma janela inesperada: '$($erro.MainWindowTitle)'" }
+          }
+          if (-not $janela) { throw "A janela principal do DIGEP não abriu em 90 s" }
+          Start-Sleep -Seconds 10  # continua aberta depois de montar as telas?
+          $janela.Refresh()
+          if ($janela.HasExited) { throw "O DIGEP fechou sozinho depois de abrir" }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $tela = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $imagem = New-Object System.Drawing.Bitmap $tela.Width, $tela.Height
+          [System.Drawing.Graphics]::FromImage($imagem).CopyFromScreen($tela.Location, [System.Drawing.Point]::Empty, $tela.Size)
+          $imagem.Save("$env:RUNNER_TEMP\interface.png")
+          Write-Output "::notice title=Interface::Janela '$($janela.MainWindowTitle)' aberta e respondendo: $($janela.Responding)"
+          if (-not $janela.Responding) { throw "A janela do DIGEP não está respondendo" }
+          Get-Process -Name DIGEP_Folha_de_Ponto | Stop-Process -Force
+          if (-not (Test-Path "$env:DESTINO\folha_ponto.db")) { throw "O banco de dados não foi criado na pasta instalada" }
+
       - name: Relatório da verificação
         if: always()
         uses: actions/upload-artifact@v4
@@ -99,4 +142,5 @@ jobs:
           path: |
             ${{ runner.temp }}/verificacao.txt
             ${{ runner.temp }}/instalacao.log
+            ${{ runner.temp }}/interface.png
           if-no-files-found: ignore
